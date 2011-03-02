@@ -1,0 +1,43 @@
+<!DOCTYPE html>
+<html>
+  <head>
+    <meta charset="UTF-8">
+    <title>Holgersubs</title>
+    <script src="lib/prototype.js"></script>
+    <script src="holgersubs.js"></script>
+    <link rel="stylesheet" href="holgersubs.css" type="text/css"/>
+    <style>
+    </style>
+  </head>
+  <body onload="HS.makeEditorWithIdPrefix('HS_').withVideos('media/akt 1-2.mp4', 'media/akt 1-2.ogg').withSubs('media/akt 1-2.stl');">
+    <div id="container">
+      <div><button type="button">
+          Spara
+        </button><button type="button" disabled="">
+          <b>&#x21b6;</b> Ångra
+        </button><button type="button" disabled="">
+          <b>&#x21b7;</b> Gör om
+        </button></div>
+      <div id="stack">
+        <video id="HS_video" controls="">
+          <p>Din webbläsare kan inte spela film på nåt bra sätt! &#x0304;\(°_o)/&#x0304;</p>
+          <p>Skaffa nån som är bra, typ:</p>
+          <ul>
+            <li id="HS_recommend-chrome"><a href="http://www.google.com/chrome/?hl=sv">Chrome</a></li>
+            <li id="HS_recommend-opera"><a href="http://www.opera.com/">Opera</a></li>
+            <li id="HS_recommend-safari"><a href="http://www.apple.com/se/safari/">Safari</a></li>
+            <li id="HS_recommend-firefox"><a href="http://www.mozilla-europe.org/sv/firefox/">Firefox</a></li>
+          </ul>
+        </video>
+        <div id="HS_subdisplay">
+        </div>
+      </div>
+      <div id="HS_subtitles"></div>
+      <div><button type="button" id="HS_add">
+          <b>+</b> Lägg till
+        </button><button type="button" disabled="">
+          <b>-</b> Radera
+        </button></div>
+    </div>
+  </body>
+</html>
