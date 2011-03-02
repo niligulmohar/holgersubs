@@ -59,6 +59,10 @@ describe("SubtitleSequence", function () {
         var sub = seq.subtitleAt(START - 1);
         expect(sub).not.toBeDefined();
       });
+      it("should be found when using subtitleAtOrAfter before its beginning", function () {
+        var sub = seq.subtitleAtOrAfter(START - 1);
+        expect(sub).toBeDefined();
+      });
     });
     describe("adding another subtitle, out of order", function () {
       var ANOTHER_START = 0;
@@ -82,10 +86,55 @@ describe("SubtitleSequence", function () {
         expect(sub).toBeDefined();
       });
     });
-    it("should be undoable", function () {
-      seq.undo();
-      var sub = seq.subtitleAt(START);
-      expect(sub).not.toBeDefined();
+    describe("after adding, undo", function () {
+      it("should be available", function () {
+        expect(seq.undoAvailable()).toBe(true);
+      });
+      it("should work", function () {
+        seq.undo();
+        var sub = seq.subtitleAt(START);
+        expect(sub).not.toBeDefined();
+      });
+      it("should send a correct notification", function () {
+        var observer = {
+          notify: jasmine.createSpy()
+        };
+        seq.registerObserver(observer);
+        seq.undo();
+
+        expect(observer.notify).toHaveBeenCalledWith({ start: START, end: END });
+      });
+      describe("after undoing, redo", function () {
+        beforeEach(function () {
+          seq.undo();
+        });
+        it("should be available", function () {
+          expect(seq.redoAvailable()).toBe(true);
+        });
+        it("should work", function () {
+          seq.redo();
+          var sub = seq.subtitleAt(START);
+          expect(sub).toBeDefined();
+        });
+        it("should send a correct notification", function () {
+          var observer = {
+            notify: jasmine.createSpy()
+          };
+          seq.registerObserver(observer);
+          seq.redo();
+
+          expect(observer.notify).toHaveBeenCalledWith({ start: START, end: END });
+        });
+      });
+      describe("after undoing, adding a subtitle", function () {
+        beforeEach(function () {
+          seq.undo();
+          seq.addSubtitle(START, END, "Subtitle");
+        });
+        it("should disable redo", function () {
+          expect(seq.redoAvailable()).toBe(false);
+        });
+      });
     });
   });
   describe("adding subtitles starting simultaneously", function () {
@@ -146,18 +195,18 @@ describe("SubtitleSequence", function () {
       spy = jasmine.createSpy();
     });
     it("should be possible over all subtitles", function () {
-      seq.eachSubtitle(0, 30, function (start, end, text) {
-        spy(text);
+      seq.eachSubtitle(0, 30, function (start, end, text, nextStart) {
+        spy(text, nextStart);
       });
-      expect(spy).toHaveBeenCalledWith("A");
-      expect(spy).toHaveBeenCalledWith("B");
-      expect(spy).toHaveBeenCalledWith("C");
+      expect(spy).toHaveBeenCalledWith("A", 10);
+      expect(spy).toHaveBeenCalledWith("B", 20);
+      expect(spy).toHaveBeenCalledWith("C", null);
     });
     it("should be possible over parts of the subtitles", function () {
-      seq.eachSubtitle(9, 16, function (start, end, text) {
-        spy(text);
+      seq.eachSubtitle(9, 16, function (start, end, text, nextStart) {
+        spy(text, nextStart);
       });
-      expect(spy).toHaveBeenCalledWith("B");
+      expect(spy).toHaveBeenCalledWith("B", 20);
     });
   });
 });
@@ -188,6 +237,23 @@ describe("parsing example STL data", function () {
   it("should end the second subtitle before 15:15", function () {
     var frame = HS.smpteToFrames("00:00:15:15");
     expect(seq.subtitleAt(frame)).not.toBeDefined();
+  });
+  it("should not create an extra undefined subtitle for a trailing newline", function () {
+    var spy = jasmine.createSpy();
+
+    stlData =
+      "00:05:34:09 , 00:05:39:12 , Och det är jag!\n";
+    seq = HS.SubtitleSequence.fromStl(stlData);
+
+    console.dir(seq);
+    seq.eachSubtitle(0, Infinity, function (start, end, text, nextStart) {
+      spy(nextStart);
+    });
+    expect(spy.callCount).toBe(1);
+    expect(spy).not.toHaveBeenCalledWith(undefined);
+  });
+  it("should not be undoable", function () {
+    expect(seq.undoAvailable()).toBe(false);
   });
 });
 

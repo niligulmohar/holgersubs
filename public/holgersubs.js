@@ -15,6 +15,7 @@ HS = (function () {
     initialize: function () {
       this._subtitles = [];
       this._undoStack = [];
+      this._redoStack = [];
       this._observers = [];
     },
     subtitleAt: function (time) {
@@ -26,11 +27,24 @@ HS = (function () {
         return undefined;
       }
     },
+    subtitleAtOrAfter: function (time) {
+      var index = this._subtitleIndexFromTime(time);
+      var sub = this._subtitles[index];
+      return sub;
+    },
     eachSubtitle: function (start, end, fn) {
       var i = this._subtitleIndexFromTime(start);
       for (; this._subtitles[i] && this._subtitles[i].start < end; i++) {
         var sub = this._subtitles[i];
-        fn(sub.start, sub.end, sub.text);
+        var nextSub = this._subtitles[i + 1];
+        var nextStart;
+
+        if (nextSub === undefined) {
+          nextStart = null;
+        } else {
+          nextStart = nextSub.start;
+        }
+        fn(sub.start, sub.end, sub.text, nextStart);
       }
     },
     addSubtitle: function (start, end, text) {
@@ -46,9 +60,24 @@ HS = (function () {
       };
       this._applyCommand(command);
     },
+    undoAvailable: function () {
+      return this._undoStack.length > 0;
+    },
     undo: function () {
       var command = this._undoStack.pop();
+      this._redoStack.push(command);
       this._notifyObservers(command.undo());
+    },
+    clearUndoStack: function () {
+      this._undoStack = [];
+    },
+    redoAvailable: function () {
+      return this._redoStack.length > 0;
+    },
+    redo: function () {
+      var command = this._redoStack.pop();
+      this._undoStack.push(command);
+      this._notifyObservers(command.apply());
     },
     toStl: function () {
       var lines = this._subtitles.map(function (sub) {
@@ -102,11 +131,16 @@ HS = (function () {
     },
     _removeSubtitleAt: function (time) {
       var index = this._subtitleIndexFromTime(time);
+      var oldSub = this._subtitles[index];
       this._subtitles.splice(index, 1);
+
+      return { start: oldSub.start,
+               end: oldSub.end };
     },
     _applyCommand: function (command) {
       this._notifyObservers(command.apply());
       this._undoStack.push(command);
+      this._redoStack = [];
     },
     _notifyObservers: function (arg) {
       this._observers.forEach(function (observer) {
@@ -121,16 +155,18 @@ HS = (function () {
     var lines = text.split("\n");
 
     lines.forEach(function (line) {
-      var parts = line.split(" , ");
-      if (parts.length >= 3) {
-        var start = smpteToFrames(parts[0]);
-        var end = smpteToFrames(parts[1]);
-        var text = parts.slice(2).join(" , ");
+      if (line !== "") {
+        var parts = line.split(" , ");
+        if (parts.length >= 3) {
+          var start = smpteToFrames(parts[0]);
+          var end = smpteToFrames(parts[1]);
+          var text = parts.slice(2).join(" , ");
+        }
+        seq.addSubtitle(start, end, text);
       }
-
-      seq.addSubtitle(start, end, text);
     });
 
+    seq.clearUndoStack();
     return seq;
   };
 
@@ -174,6 +210,7 @@ HS = (function () {
       this._subs = null;
       this._updateInterval = null;
       this._editorLines = [];
+      this._selectedEditorLine = null;
     },
     setup: function () {
       this._videoElement = this._getElement("video");
@@ -186,6 +223,12 @@ HS = (function () {
       this._editTextElement = this._getElement("edit-text");
 
       this._getElement("add").on("click", this._addSubtitle.bind(this));
+      this._removeButton = this._getElement("remove");
+//      this._removeButton.on("click", this._removeSubtitle.bind(this));
+      this._undoButton = this._getElement("undo");
+      this._undoButton.on("click", this._undo.bind(this));
+      this._redoButton = this._getElement("redo");
+      this._redoButton.on("click", this._redo.bind(this));
     },
     setupVideoSources: function () {
       var that = this;
@@ -214,6 +257,18 @@ HS = (function () {
       this._extendDirtySpanCompletely();
       this._setupSubtitleSequenceObserver();
       this._updateDirtySpan();
+    },
+
+    selectEditorLine: function (line) {
+      var oldLine = this._selectedEditorLine;
+      this._selectedEditorLine = line;
+
+      if (oldLine !== null) {
+        oldLine.deselect();
+      }
+      line.select();
+
+      this._updateRemoveButton();
     },
 
     _getElement: function (idWithoutPrefix) {
@@ -265,10 +320,31 @@ HS = (function () {
     _getCurrentFrame: function () {
       return secondsToFrames(this._videoElement.currentTime);
     },
+    _getLastFrame: function () {
+      return secondsToFrames(this._videoElement.duration);
+    },
+    _undo: function () {
+      this._subs.undo();
+      this._updateDirtySpan();
+    },
+    _redo: function () {
+      this._subs.redo();
+      this._updateDirtySpan();
+    },
     _addSubtitle: function () {
-      this._subs.addSubtitle(this._getCurrentFrame(),
-                             this._getCurrentFrame() + 10,
-                             "Foo @ " + this._getCurrentFrame());
+      var text = "Foo @ " + this._getCurrentFrame();
+      var now = this._getCurrentFrame();
+      var referenceSubtitle = this._subs.subtitleAtOrAfter(now);
+      var start = now;
+      if (referenceSubtitle === undefined) {
+        this._subs.addSubtitle(now, this._getLastFrame(), text);
+      } else if (referenceSubtitle.start < now) {
+        this._subs.addSubtitle(now, referenceSubtitle.end, text);
+      } else if (referenceSubtitle.start === now) {
+        alert("fail");
+      } else {
+        this._subs.addSubtitle(now, referenceSubtitle.start, text);
+      }
       this._updateDirtySpan();
     },
     _extendDirtySpanCompletely: function () {
@@ -288,64 +364,65 @@ HS = (function () {
       this._dirtySpanEnd = Math.max(this._dirtySpanEnd, end);
     },
     _updateDirtySpan: function () {
-      var lineRemovalStartIndex = this._getEditorLineIndexAfterFrame(this._dirtySpanStart);
-      var lineRemovalEndIndex = this._getEditorLineIndexAfterFrame(this._dirtySpanEnd);
-      var lineBeforeRemovalSpan = this._editorLines[lineRemovalStartIndex - 1];
-      var lineAfterRemovalSpan = this._editorLines[lineRemovalEndIndex];
-      var linesToRemove = lineRemovalEndIndex - lineRemovalStartIndex;
-      var removedLines = this._editorLines.splice(lineRemovalStartIndex, linesToRemove);
-      var that = this;
-      removedLines.forEach(function (editorLine) {
-        that._subtitlesElement.removeChild(editorLine.getDomElement());
-      });
-      debug("_dirtySpanStart: " + this._dirtySpanStart);
-      debug("lineRemovalStartIndex: " + lineRemovalStartIndex);
-      debug("linesToRemove: " + linesToRemove);
-      debug("removedLines: " + removedLines);
-      console.dir(this);
-
-      if (lineAfterRemovalSpan === undefined) {
-        this._addNewEditorLinesThroughFunction(function (element) {
-          that._subtitlesElement.appendChild(element);
-        }, lineRemovalStartIndex);
-      } else {
-        this._addNewEditorLinesThroughFunction(function (element) {
-          lineAfterRemovalSpan.getDomElement().insert({ before: element });
-        }, lineRemovalStartIndex);
+      var now = this._getCurrentFrame();
+      if (now >= this._dirtySpanStart && now <= this._dirtySpanEnd) {
+        this._updateSubtitleDisplay();
       }
 
+      if (this._subs.undoAvailable()) {
+        this._enableButton(this._undoButton);
+      } else {
+        this._disableButton(this._undoButton);
+      }
+
+      if (this._subs.redoAvailable()) {
+        this._enableButton(this._redoButton);
+      } else {
+        this._disableButton(this._redoButton);
+      }
+
+      this._redrawEverything();
+
+      this._updateRemoveButton();
+    },
+    _updateRemoveButton: function () {
+      if (this._selectedEditorLine !== null) {
+        this._enableButton(this._removeButton);
+      } else {
+        this._disableButton(this._removeButton);
+      }
+    },
+    _enableButton: function (button) {
+      button.writeAttribute("disabled", null);
+    },
+    _disableButton: function (button) {
+      button.writeAttribute("disabled", "disabled");
+    },
+    _redrawEverything: function () {
+      this._removeAllOldLines();
+      this._addAllNewLines();
       this._clearDirtySpan();
     },
-    _getEditorLineIndexAfterFrame: function (frame) {
-      for (var i = 0;; i++) {
-        var editorLine = this._editorLines[i];
-        if (editorLine === undefined || editorLine.getFrame() > frame) {
-          return i;
-        }
-      }
+    _removeAllOldLines: function () {
+      this._editorLines.forEach(function (line) {
+        var dom = line.getDomElement();
+        dom.parentNode.removeChild(dom);
+      });
+      this._editorLines = [];
+      this._selectedEditorLine = null;
     },
-    _addNewEditorLinesThroughFunction: function (addFunction, atIndex) {
+    _addAllNewLines: function () {
       var that = this;
-      var lastEnd = null;
-      var index = atIndex;
-      this._subs.eachSubtitle(
-        this._dirtySpanStart,
-        this._dirtySpanEnd,
-        function (start, end, text) {
-          var textLine = that._newEditorLine(start, text, atIndex++);
-          addFunction(textLine.createDomElement());
-          if (lastEnd !== null && lastEnd < start) {
-            var noTextLine = that._newEditorLine(end, "", atIndex++);
-            addFunction(noTextLine.createDomElement());
-          }
-          lastEnd = end;
+      this._subs.eachSubtitle(0, Infinity, function (start, end, text, nextStart) {
+        var line = new EditorLine(that, start, text);
+        that._editorLines.push(line);
+        that._subtitlesElement.appendChild(line.createDomElement());
+        if (end > start && (nextStart === null || end < nextStart)) {
+          var endLine = new EditorLine(that, end, "");
+          that._editorLines.push(endLine);
+          that._subtitlesElement.appendChild(endLine.createDomElement());
         }
-      );
-    },
-    _newEditorLine: function (time, text, atIndex) {
-      var editorLine = new EditorLine(this, time, text);
-      this._editorLines.splice(atIndex, 0, editorLine);
-      return editorLine;
+      });
     },
     _clearDirtySpan: function () {
       this._dirtySpanStart = Infinity;
@@ -407,7 +484,15 @@ HS = (function () {
       this._textArea.textContent = this._text.replace("\\n", "\n");
       this._topElement.insert(this._textArea);
 
+      this._topElement.on("click", function () { this._editor.selectEditorLine(this); }.bind(this));
+
       return this._topElement;
+    },
+    select: function () {
+      this._topElement.addClassName("HS_selected");
+    },
+    deselect: function () {
+      this._topElement.removeClassName("HS_selected");
     },
     _getDisplayText: function () {
       if (this._text === "") {
@@ -434,8 +519,7 @@ HS = (function () {
       var element = new Element("button", { type: "button", style: "display:none", title: title }).update(contents);
       holder.insert(element);
       return holder;
-    },
-
+    }
   });
 
   var argumentsToArray = function (argObject) {

@@ -13,9 +13,11 @@
     <div id="container">
       <div><button type="button">
           Spara
-        </button><button type="button" disabled="">
+        </button>
+        <button id="HS_undo" type="button" disabled="disabled">
           <b>&#x21b6;</b> Ångra
-        </button><button type="button" disabled="">
+        </button>
+        <button id="HS_redo" type="button" disabled="disabled">
           <b>&#x21b7;</b> Gör om
         </button></div>
       <div id="stack">
@@ -33,11 +35,14 @@
         </div>
       </div>
       <div id="HS_subtitles"></div>
-      <div><button type="button" id="HS_add">
+      <div>
+        <button id="HS_add" type="button">
           <b>+</b> Lägg till
-        </button><button type="button" disabled="">
+        </button>
+        <button id="HS_remove" type="button" disabled="disabled">
           <b>-</b> Radera
-        </button></div>
+        </button>
+      </div>
     </div>
   </body>
 </html>
