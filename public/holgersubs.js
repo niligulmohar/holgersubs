@@ -256,7 +256,7 @@ HS = (function () {
       this._subs = SubtitleSequence.fromStl(stlData);
       this._extendDirtySpanCompletely();
       this._setupSubtitleSequenceObserver();
-      this._updateDirtySpan();
+      this._updateEditorState();
     },
 
     selectEditorLine: function (line) {
@@ -325,11 +325,11 @@ HS = (function () {
     },
     _undo: function () {
       this._subs.undo();
-      this._updateDirtySpan();
+      this._updateEditorState();
     },
     _redo: function () {
       this._subs.redo();
-      this._updateDirtySpan();
+      this._updateEditorState();
     },
     _addSubtitle: function () {
       var text = "Foo @ " + this._getCurrentFrame();
@@ -345,7 +345,7 @@ HS = (function () {
       } else {
         this._subs.addSubtitle(now, referenceSubtitle.start, text);
       }
-      this._updateDirtySpan();
+      this._updateEditorState();
     },
     _extendDirtySpanCompletely: function () {
       this._dirtySpanStart = 0;
@@ -363,7 +363,7 @@ HS = (function () {
       this._dirtySpanStart = Math.min(this._dirtySpanStart, start);
       this._dirtySpanEnd = Math.max(this._dirtySpanEnd, end);
     },
-    _updateDirtySpan: function () {
+    _updateEditorState: function () {
       var now = this._getCurrentFrame();
       if (now >= this._dirtySpanStart && now <= this._dirtySpanEnd) {
         this._updateSubtitleDisplay();
@@ -381,7 +381,7 @@ HS = (function () {
         this._disableButton(this._redoButton);
       }
 
-      this._redrawEverything();
+      this._updateDirtySpan();
 
       this._updateRemoveButton();
     },
@@ -398,31 +398,78 @@ HS = (function () {
     _disableButton: function (button) {
       button.writeAttribute("disabled", "disabled");
     },
-    _redrawEverything: function () {
-      this._removeAllOldLines();
-      this._addAllNewLines();
+    // TODO: sista subtitle-av raden försvinner ej
+    _updateDirtySpan: function () {
+      //this._redrawEverything();
+      var lineRemovalStartIndex = this._getEditorLineIndexAfterFrame(this._dirtySpanStart);
+      var lineRemovalEndIndex = this._getEditorLineIndexBeforeFrame(this._dirtySpanEnd);
+      lineRemovalEndIndex = Math.max(lineRemovalStartIndex, lineRemovalEndIndex);
+      var lineBeforeRemovalSpan = this._editorLines[lineRemovalStartIndex - 1];
+      var lineAfterRemovalSpan = this._editorLines[lineRemovalEndIndex];
+      var linesToRemove = lineRemovalEndIndex - lineRemovalStartIndex;
+      var removedLines = this._editorLines.splice(lineRemovalStartIndex, linesToRemove);
+      var that = this;
+      removedLines.forEach(function (editorLine) {
+        that._subtitlesElement.removeChild(editorLine.getDomElement());
+      });
+      debug("_dirtySpanStart: " + this._dirtySpanStart);
+      debug("_dirtySpanEnd: " + this._dirtySpanEnd);
+      debug("lineRemovalStartIndex: " + lineRemovalStartIndex);
+      debug("lineRemovalEndIndex: " + lineRemovalEndIndex);
+      debug("linesToRemove: " + linesToRemove);
+      debug("removedLines: " + removedLines);
+      console.dir(this);
+
+      if (lineAfterRemovalSpan === undefined) {
+        this._addNewEditorLinesThroughFunction(function (element) {
+          that._subtitlesElement.appendChild(element);
+        }, lineRemovalStartIndex, lineAfterRemovalSpan);
+      } else {
+        this._addNewEditorLinesThroughFunction(function (element) {
+          lineAfterRemovalSpan.getDomElement().insert({ before: element });
+        }, lineRemovalStartIndex, lineAfterRemovalSpan);
+      }
+
       this._clearDirtySpan();
     },
-    _removeAllOldLines: function () {
-      this._editorLines.forEach(function (line) {
-        var dom = line.getDomElement();
-        dom.parentNode.removeChild(dom);
-      });
-      this._editorLines = [];
-      this._selectedEditorLine = null;
-    },
-    _addAllNewLines: function () {
-      var that = this;
-      this._subs.eachSubtitle(0, Infinity, function (start, end, text, nextStart) {
-        var line = new EditorLine(that, start, text);
-        that._editorLines.push(line);
-        that._subtitlesElement.appendChild(line.createDomElement());
-        if (end > start && (nextStart === null || end < nextStart)) {
-          var endLine = new EditorLine(that, end, "");
-          that._editorLines.push(endLine);
-          that._subtitlesElement.appendChild(endLine.createDomElement());
+    _getEditorLineIndexAfterFrame: function (frame) {
+      for (var i = 0;; i++) {
+        var editorLine = this._editorLines[i];
+        if (editorLine === undefined || editorLine.getFrame() >= frame) {
+          return i;
         }
-      });
+      }
+    },
+    _getEditorLineIndexBeforeFrame: function (frame) {
+      for (var i = this._editorLines.length - 1;; i--) {
+        var editorLine = this._editorLines[i];
+        if (editorLine === undefined || editorLine.getFrame() <= frame) {
+          return i;
+        }
+      }
+    },
+    _addNewEditorLinesThroughFunction: function (addFunction, atIndex, beforeEditorLine) {
+      var that = this;
+      var index = atIndex;
+      this._subs.eachSubtitle(
+        this._dirtySpanStart,
+        this._dirtySpanEnd,
+        function (start, end, text, nextStart) {
+          var textLine = that._newEditorLine(start, text, atIndex++);
+          addFunction(textLine.createDomElement());
+          if (end > start &&
+              (nextStart === null || end < nextStart) &&
+              (beforeEditorLine === undefined || end < beforeEditorLine.getFrame())) {
+            var noTextLine = that._newEditorLine(end, "", atIndex++);
+            addFunction(noTextLine.createDomElement());
+          }
+        }
+      );
+    },
+    _newEditorLine: function (time, text, atIndex) {
+      var editorLine = new EditorLine(this, time, text);
+      this._editorLines.splice(atIndex, 0, editorLine);
+      return editorLine;
     },
     _clearDirtySpan: function () {
       this._dirtySpanStart = Infinity;
@@ -494,8 +541,11 @@ HS = (function () {
     deselect: function () {
       this._topElement.removeClassName("HS_selected");
     },
+    isEmpty: function () {
+      return this._text === "";
+    },
     _getDisplayText: function () {
-      if (this._text === "") {
+      if (this.isEmpty()) {
         return "&mdash;";
       } else {
         return this._text.replace("\\n", "<br>");
