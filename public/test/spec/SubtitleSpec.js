@@ -165,6 +165,24 @@ describe("SubtitleSequence", function () {
       });
     });
   });
+  describe("removing the end of a subtitle", function () {
+    beforeEach(function () {
+      seq.addSubtitle(5, 10, "Earlier sub");
+      seq.addSubtitle(15, 20, "Later sub");
+    });
+    it("should extend the duration of the subtitle to the start of the next one", function () {
+      seq.removeEndOfSubtitleAt(5);
+      var earlierSub = seq.subtitleAt(5);
+      expect(earlierSub.end).toEqual(15);
+    });
+    describe("removing the end of the last subtitle", function () {
+      it("should throw an exception", function () {
+        expect(function () {
+          seq.removeEndOfSubtitleAt(15);
+        }).toThrow("Cannot remove the end of the last subtitle");
+      });
+    });
+  });
   describe("the observer interface", function () {
     var observer;
     beforeEach(function () {

@@ -60,6 +60,25 @@ HS = (function () {
       };
       this._applyCommand(command);
     },
+    removeEndOfSubtitleAt: function (time) {
+      var index = this._subtitleIndexFromTime(time);
+      var oldSubtitle = this._subtitles[index];
+      var nextSubtitle = this._subtitles[index + 1];
+      if (nextSubtitle === undefined) {
+        throw new Error("Cannot remove the end of the last subtitle");
+      }
+      var newSubtitle = new Subtitle(oldSubtitle.start, nextSubtitle.start, oldSubtitle.text);
+      var that = this;
+      var command = {
+        apply: function () {
+          return that._replaceSubtitleAtIndex(index, newSubtitle);
+        },
+        undo: function () {
+          return that._replaceSubtitleAtIndex(index, oldSubtitle);
+        }
+      };
+      this._applyCommand(command);
+    },
     undoAvailable: function () {
       return this._undoStack.length > 0;
     },
@@ -136,6 +155,13 @@ HS = (function () {
 
       return { start: oldSub.start,
                end: oldSub.end };
+    },
+    _replaceSubtitleAtIndex: function (index, newSub) {
+      var oldSub = this._subtitles[index];
+      this._subtitles.splice(index, 1, newSub);
+
+      return { start: oldSub.start,
+               end: Math.max(oldSub.end, newSub.end) };
     },
     _applyCommand: function (command) {
       this._notifyObservers(command.apply());
@@ -224,7 +250,7 @@ HS = (function () {
 
       this._getElement("add").on("click", this._addSubtitle.bind(this));
       this._removeButton = this._getElement("remove");
-//      this._removeButton.on("click", this._removeSubtitle.bind(this));
+      this._removeButton.on("click", this._removeSubtitle.bind(this));
       this._undoButton = this._getElement("undo");
       this._undoButton.on("click", this._undo.bind(this));
       this._redoButton = this._getElement("redo");
@@ -346,6 +372,14 @@ HS = (function () {
         this._subs.addSubtitle(now, referenceSubtitle.start, text);
       }
       this._updateEditorState();
+    },
+    _removeSubtitle: function () {
+      if (this._selectedEditorLine) {
+        if (this._selectedEditorLine.isEmpty()) {
+          this._subs.removeEndOfSubtitleAt(this._selectedEditorLine.getFrame() - 1);
+          this._updateEditorState();
+        }
+      }
     },
     _extendDirtySpanCompletely: function () {
       this._dirtySpanStart = 0;
