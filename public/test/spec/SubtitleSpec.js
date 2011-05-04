@@ -183,6 +183,48 @@ describe("SubtitleSequence", function () {
       });
     });
   });
+  describe("removing the beginning of a subtitle", function () {
+    beforeEach(function () {
+      seq.addSubtitle(5, 10, "Earlier sub");
+      seq.addSubtitle(15, 20, "Later sub");
+    });
+    describe("removing the beginning of the first subtitle", function () {
+      it("should remove the subtitle", function () {
+        seq.removeStartOfSubtitleAt(5);
+        var earlierSub = seq.subtitleAt(5);
+        expect(earlierSub).not.toBeDefined();
+      });
+    });
+    describe("removing the beginning of a subtitle preceded by another one", function () {
+      describe("the previous subtitle ends before the one being removed starts", function () {
+        it("should remove the subtitle", function () {
+          seq.removeStartOfSubtitleAt(15);
+          var laterSub = seq.subtitleAt(15);
+          expect(laterSub).not.toBeDefined();
+        });
+      });
+      describe("the previous subtitle ends right when the one being removed starts", function () {
+        beforeEach(function () {
+          seq = new HS.SubtitleSequence();
+          seq.addSubtitle(5, 15, "Earlier sub");
+          seq.addSubtitle(15, 20, "Later sub");
+        });
+        it("should merge the timespan of the one being removed into the previous one", function () {
+          seq.removeStartOfSubtitleAt(15);
+          var remainingSub = seq.subtitleAt(5);
+          expect(remainingSub.start).toEqual(5);
+          expect(remainingSub.end).toEqual(20);
+          expect(remainingSub.text).toEqual("Earlier sub");
+        });
+      });
+    });
+    it("should be undoable", function () {
+      seq.removeStartOfSubtitleAt(15);
+      expect(seq.subtitleAt(15)).not.toBeDefined();
+      seq.undo();
+      expect(seq.subtitleAt(15)).toBeDefined();
+    });
+  });
   describe("the observer interface", function () {
     var observer;
     beforeEach(function () {

@@ -60,6 +60,20 @@ HS = (function () {
       };
       this._applyCommand(command);
     },
+    removeStartOfSubtitleAt: function (time) {
+      var oldSubtitle = this.subtitleAt(time);
+      var that = this;
+      var removedSubtitle;
+      var command = {
+        apply: function () {
+          return that._removeSubtitleAt(time);
+        },
+        undo: function () {
+          return that._insertSubtitle(oldSubtitle);
+        }
+      };
+      this._applyCommand(command);
+    },
     removeEndOfSubtitleAt: function (time) {
       var index = this._subtitleIndexFromTime(time);
       var oldSubtitle = this._subtitles[index];
@@ -151,10 +165,16 @@ HS = (function () {
     _removeSubtitleAt: function (time) {
       var index = this._subtitleIndexFromTime(time);
       var oldSub = this._subtitles[index];
+      var prevSub = this._subtitles[index - 1];
       this._subtitles.splice(index, 1);
-
-      return { start: oldSub.start,
-               end: oldSub.end };
+      if (prevSub && prevSub.end === oldSub.start) {
+        prevSub.end = oldSub.end;
+        return { start: prevSub.start,
+                 end: prevSub.end };
+      } else {
+        return { start: oldSub.start,
+                 end: oldSub.end };
+      }
     },
     _replaceSubtitleAtIndex: function (index, newSub) {
       var oldSub = this._subtitles[index];
@@ -377,8 +397,10 @@ HS = (function () {
       if (this._selectedEditorLine) {
         if (this._selectedEditorLine.isEmpty()) {
           this._subs.removeEndOfSubtitleAt(this._selectedEditorLine.getFrame() - 1);
-          this._updateEditorState();
+        } else {
+          this._subs.removeStartOfSubtitleAt(this._selectedEditorLine.getFrame());
         }
+        this._updateEditorState();
       }
     },
     _extendDirtySpanCompletely: function () {
