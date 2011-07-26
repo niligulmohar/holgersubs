@@ -33,6 +33,7 @@ h1 {
   text-shadow: #000 0 0 2px, #000 0 0 2px, #000 0 0 2px;
 }
 #HS_subtitles {
+  position: relative;
   height: 17em;
   overflow: auto;
   border: inset 2px;

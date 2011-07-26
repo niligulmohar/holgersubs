@@ -265,6 +265,10 @@ HS = (function () {
     return Math.round(seconds * FPS);
   };
 
+  var framesToSeconds = function (frames) {
+    return frames / FPS;
+  };
+
   var Editor = Class.create({
     initialize: function (idPrefix) {
       this._idPrefix = idPrefix;
@@ -283,13 +287,66 @@ HS = (function () {
       this._editTimeElement = this._getElement("edit-time");
       this._editTextElement = this._getElement("edit-text");
 
-      this._getElement("add").on("click", this._addSubtitle.bind(this));
+      var that = this;
+      this._getElement("add").on("click", function (event) {
+        Event.stop(event);
+        that._addSubtitle();
+      });
       this._removeButton = this._getElement("remove");
       this._removeButton.on("click", this._removeSubtitle.bind(this));
       this._undoButton = this._getElement("undo");
       this._undoButton.on("click", this._undo.bind(this));
       this._redoButton = this._getElement("redo");
       this._redoButton.on("click", this._redo.bind(this));
+
+      var that = this;
+      $(document).on("keydown", function (event) {
+        if (Event.findElement(event, "textarea")) {
+          return;
+        }
+        if (event.keyCode == 32) {
+          /* Space */
+          that.togglePlayOrPause();
+          Event.stop(event);
+        } else if (event.keyCode == 13) {
+          /* Return */
+          if (that._selectedEditorLine) {
+            that.editLine(that._selectedEditorLine);
+          }
+          Event.stop(event);
+        } else if (event.keyCode === 74) {
+          /* "J" */
+          that._selectNextLine();
+        } else if (event.keyCode === 75) {
+          /* "K" */
+          that._selectPreviousLine();
+        } else if (event.keyCode === 90 && event.ctrlKey) {
+          /* Ctrl-Z */
+          that._undo();
+          Event.stop(event);
+        } else if (event.keyCode === 89 && event.ctrlKey) {
+          /* Ctrl-Y */
+          that._redo();
+          Event.stop(event);
+        } else if (event.keyCode === 73) {
+          /* "I" */
+          that._addSubtitle();
+          Event.stop(event);
+        } else if (event.keyCode === 68 || event.keyCode === 46) {
+          /* "D" or Delete */
+          that._removeSubtitle();
+          Event.stop(event);
+        } else {
+          console.dir(event);
+        }
+      });
+      $(document).on("click", function (event) {
+        if (Event.isLeftClick(event)) {
+          if (!Event.findElement(event, "textarea")) {
+            that.leaveEditMode();
+          }
+        }
+      });
     },
     setupVideoSources: function () {
       var that = this;
@@ -319,7 +376,27 @@ HS = (function () {
       this._setupSubtitleSequenceObserver();
       this._updateEditorState();
     },
-
+    togglePlayOrPause: function () {
+      if (this._videoElement.paused) {
+        this._videoElement.play();
+      } else {
+        this._pauseVideo();
+      }
+    },
+    _selectNextLine: function () {
+      var index = this._editorLines.indexOf(this._selectedEditorLine);
+      var newLine = this._editorLines[index + 1];
+      if (newLine) {
+        this.selectEditorLine(newLine);
+      }
+    },
+    _selectPreviousLine: function () {
+      var index = this._editorLines.indexOf(this._selectedEditorLine);
+      var newLine = this._editorLines[index - 1];
+      if (newLine) {
+        this.selectEditorLine(newLine);
+      }
+    },
     selectEditorLine: function (line) {
       var oldLine = this._selectedEditorLine;
       if (line === oldLine) {
@@ -353,6 +430,12 @@ HS = (function () {
       this._updateEditorState();
     },
 
+    startPlayingFromTime: function (time) {
+      var that = this;
+      this._videoElement.currentTime = framesToSeconds(time);
+      this._playVideo();
+    },
+
     _getElement: function (idWithoutPrefix) {
       return $(this._idPrefix + idWithoutPrefix);
     },
@@ -362,6 +445,12 @@ HS = (function () {
       this._addVideoEventListener("ended", this._onVideoStop);
       this._addVideoEventListener("seeked", this._onVideoSeek);
       this._addVideoEventListener("canplay", this._updateSubtitleDisplay);
+    },
+    _pauseVideo: function () {
+      this._videoElement.pause();
+    },
+    _playVideo: function () {
+      this._videoElement.play();
     },
     _addVideoEventListener: function (name, callback) {
       this._videoElement.addEventListener(name, callback.bind(this), true);
@@ -406,15 +495,32 @@ HS = (function () {
       return secondsToFrames(this._videoElement.duration);
     },
     _undo: function () {
-      this._subs.undo();
-      this._updateEditorState();
+      if (this._subs.undoAvailable()) {
+        this._subs.undo();
+        this._updateEditorState();
+      }
+    },
+    _selectEditorLineAtTime: function (time) {
+      this.selectEditorLine(this._getEditorLineAt(time));
+    },
+    _editLineAt: function (time) {
+      this.editLine(this._getEditorLineAt(time));
+    },
+    _getEditorLineAt: function (time) {
+      var lineIndex = this._getEditorLineIndexBeforeFrame(time);
+      if (lineIndex < 0) {
+        lineIndex = 0;
+      }
+      return this._editorLines[lineIndex];
     },
     _redo: function () {
-      this._subs.redo();
-      this._updateEditorState();
+      if (this._subs.redoAvailable()) {
+        this._subs.redo();
+        this._updateEditorState();
+      }
     },
     _addSubtitle: function () {
-      var text = "Foo @ " + this._getCurrentFrame();
+      var text = "";
       var now = this._getCurrentFrame();
       var referenceSubtitle = this._subs.subtitleAtOrAfter(now);
       var start = now;
@@ -423,11 +529,13 @@ HS = (function () {
       } else if (referenceSubtitle.start < now) {
         this._subs.addSubtitle(now, referenceSubtitle.end, text);
       } else if (referenceSubtitle.start === now) {
-        alert("fail");
+        this._editLineAt(now);
+        return;
       } else {
         this._subs.addSubtitle(now, referenceSubtitle.start, text);
       }
       this._updateEditorState();
+      this._editLineAt(now);
     },
     _removeSubtitle: function () {
       if (this._selectedEditorLine) {
@@ -456,6 +564,7 @@ HS = (function () {
       this._dirtySpanEnd = Math.max(this._dirtySpanEnd, end);
     },
     _updateEditorState: function () {
+      var firstFrameOfChanges = this._dirtySpanStart;
       var now = this._getCurrentFrame();
       if (now >= this._dirtySpanStart && now <= this._dirtySpanEnd) {
         this._updateSubtitleDisplay();
@@ -476,6 +585,7 @@ HS = (function () {
       this._updateDirtySpan();
 
       this._updateRemoveButton();
+      this._selectEditorLineAtTime(firstFrameOfChanges);
     },
     _updateRemoveButton: function () {
       if (this._selectedEditorLine !== null) {
@@ -605,7 +715,11 @@ HS = (function () {
     getDomElement: function () {
       return this._topElement;
     },
+    isInEditMode: function () {
+      return this._editMode;
+    },
     createDomElement: function () {
+      var that = this;
       this._topElement = new Element("div", { "class": "HS_listitem" });
       this._timeElement = new Element("div", { "class": "HS_time" });
       this._playButton = this._createPlayButton();
@@ -625,11 +739,21 @@ HS = (function () {
       this._topElement.insert(this._textContainer);
       this._textArea = new Element("textarea", { rows: 2, cols: 40, style: "display:none" });
       this._textArea.textContent = this._getEditText();
+      this._textArea.on("keydown", function (event) {
+        var isEscape = (event.keyCode === 27);
+        var isReturn = (event.keyCode === 13 && !event.shiftKey);
+        if (isEscape || isReturn) {
+          that.leaveEditMode();
+          Event.stop(event);
+        }
+      });
       this._topElement.insert(this._textArea);
 
-      this._topElement.on("click", function () { this._editor.selectEditorLine(this); }.bind(this));
+      this._topElement.on("click", function () {
+        this._editor.selectEditorLine(this);
+      }.bind(this));
       this._textElement.on("click", function (e) {
-        e.stopPropagation();
+        Event.stop(e);
         this._editor.editLine(this);
       }.bind(this));
 
@@ -637,6 +761,14 @@ HS = (function () {
     },
     select: function () {
       this._topElement.addClassName("HS_selected");
+      var topElement = this._topElement;
+      var offsetParent = topElement.offsetParent;
+      if (topElement.offsetTop < offsetParent.scrollTop) {
+        offsetParent.scrollTop = topElement.offsetTop;
+      }
+      if (topElement.offsetTop + topElement.offsetHeight > offsetParent.scrollTop + offsetParent.offsetHeight - 4) {
+        offsetParent.scrollTop = topElement.offsetTop - offsetParent.offsetHeight + topElement.offsetHeight + 4;
+      }
     },
     deselect: function () {
       this._topElement.removeClassName("HS_selected");
@@ -650,13 +782,14 @@ HS = (function () {
         this._editMode = true;
         this._textElement.hide();
         this._textArea.show();
-        this._textArea.focus();
+        this._textArea.activate();
       }
     },
     leaveEditMode: function () {
       if (this._editMode) {
         this._editMode = false;
         this._textArea.hide();
+        this._textArea.blur();
         var newText = this._editTextToInternalText(this._textArea.value);
         if (newText !== this._text) {
           this._text = newText;
@@ -681,6 +814,11 @@ HS = (function () {
     },
     _createPlayButton: function () {
       var element = new Element("button", { type: "button", title: "Spela härifrån" }).update("&#x25b6;");
+      var that = this;
+      element.on("click", function (event) {
+        Event.stop(event);
+        that._editor.startPlayingFromTime(that._frame);
+      });
       return element;
     },
     _createBackButton: function () {
