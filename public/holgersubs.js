@@ -571,15 +571,15 @@ HS = (function () {
       }
 
       if (this._subs.undoAvailable()) {
-        this._enableButton(this._undoButton);
+        this._undoButton.enable();
       } else {
-        this._disableButton(this._undoButton);
+        this._undoButton.disable();
       }
 
       if (this._subs.redoAvailable()) {
-        this._enableButton(this._redoButton);
+        this._redoButton.enable();
       } else {
-        this._disableButton(this._redoButton);
+        this._redoButton.disable();
       }
 
       this._updateDirtySpan();
@@ -589,38 +589,27 @@ HS = (function () {
     },
     _updateRemoveButton: function () {
       if (this._selectedEditorLine !== null) {
-        this._enableButton(this._removeButton);
+        this._removeButton.enable();
       } else {
-        this._disableButton(this._removeButton);
+        this._removeButton.disable();
       }
     },
-    _enableButton: function (button) {
-      button.writeAttribute("disabled", null);
-    },
-    _disableButton: function (button) {
-      button.writeAttribute("disabled", "disabled");
-    },
-    // TODO: sista subtitle-av raden försvinner ej
     _updateDirtySpan: function () {
-      //this._redrawEverything();
       var lineRemovalStartIndex = this._getEditorLineIndexAfterFrame(this._dirtySpanStart);
       var lineRemovalEndIndex = this._getEditorLineIndexBeforeFrame(this._dirtySpanEnd);
       lineRemovalEndIndex = Math.max(lineRemovalStartIndex, lineRemovalEndIndex);
       var lineBeforeRemovalSpan = this._editorLines[lineRemovalStartIndex - 1];
       var lineAfterRemovalSpan = this._editorLines[lineRemovalEndIndex];
+      if (lineAfterRemovalSpan && lineAfterRemovalSpan.getText() === "") {
+        lineRemovalEndIndex ++;
+        lineAfterRemovalSpan = this._editorLines[lineRemovalEndIndex];
+      }
       var linesToRemove = lineRemovalEndIndex - lineRemovalStartIndex;
       var removedLines = this._editorLines.splice(lineRemovalStartIndex, linesToRemove);
       var that = this;
       removedLines.forEach(function (editorLine) {
         that._subtitlesElement.removeChild(editorLine.getDomElement());
       });
-      debug("_dirtySpanStart: " + this._dirtySpanStart);
-      debug("_dirtySpanEnd: " + this._dirtySpanEnd);
-      debug("lineRemovalStartIndex: " + lineRemovalStartIndex);
-      debug("lineRemovalEndIndex: " + lineRemovalEndIndex);
-      debug("linesToRemove: " + linesToRemove);
-      debug("removedLines: " + removedLines);
-      console.dir(this);
 
       if (lineAfterRemovalSpan === undefined) {
         this._addNewEditorLinesThroughFunction(function (element) {
