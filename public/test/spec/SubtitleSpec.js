@@ -225,6 +225,22 @@ describe("SubtitleSequence", function () {
       expect(seq.subtitleAt(15)).toBeDefined();
     });
   });
+  describe("changing the text of a subtitle", function () {
+    beforeEach(function () {
+      seq.addSubtitle(5, 15, "Original text");
+    });
+    it("should work", function () {
+      seq.changeSubtitleTextAtTimeTo(5, "New text");
+      var sub = seq.subtitleAt(5);
+      expect(sub.text).toEqual("New text");
+    });
+    it("should be undoable", function () {
+      seq.changeSubtitleTextAtTimeTo(5, "New text");
+      seq.undo();
+      var sub = seq.subtitleAt(5);
+      expect(sub.text).toEqual("Original text");
+    });
+  });
   describe("the observer interface", function () {
     var observer;
     beforeEach(function () {

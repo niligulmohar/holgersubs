@@ -93,6 +93,21 @@ HS = (function () {
       };
       this._applyCommand(command);
     },
+    changeSubtitleTextAtTimeTo: function (time, text) {
+      var index = this._subtitleIndexFromTime(time);
+      var oldSubtitle = this._subtitles[index];
+      var newSubtitle = new Subtitle(oldSubtitle.start, oldSubtitle.end, text);
+      var that = this;
+      var command = {
+        apply: function () {
+          return that._replaceSubtitleAtIndex(index, newSubtitle);
+        },
+        undo: function () {
+          return that._replaceSubtitleAtIndex(index, oldSubtitle);
+        }
+      };
+      this._applyCommand(command);
+    },
     undoAvailable: function () {
       return this._undoStack.length > 0;
     },
@@ -307,6 +322,9 @@ HS = (function () {
 
     selectEditorLine: function (line) {
       var oldLine = this._selectedEditorLine;
+      if (line === oldLine) {
+        return;
+      }
       this._selectedEditorLine = line;
 
       if (oldLine !== null) {
@@ -315,6 +333,24 @@ HS = (function () {
       line.select();
 
       this._updateRemoveButton();
+    },
+
+    editLine: function (line) {
+      this.selectEditorLine(line);
+      line.enterEditMode();
+    },
+
+    leaveEditMode: function (line) {
+      var oldLine = this._selectedEditorLine;
+      if (oldLine) {
+        oldLine.leaveEditMode();
+      }
+    },
+
+    textChangedOnLine: function (line) {
+      // TODO: Fler fall
+      this._subs.changeSubtitleTextAtTimeTo(line.getFrame(), line.getText());
+      this._updateEditorState();
     },
 
     _getElement: function (idWithoutPrefix) {
@@ -558,9 +594,13 @@ HS = (function () {
       this._editor = editor;
       this._frame = frame;
       this._text = text;
+      this._editMode = false;
     },
     getFrame: function () {
       return this._frame;
+    },
+    getText: function () {
+      return this._text;
     },
     getDomElement: function () {
       return this._topElement;
@@ -584,10 +624,14 @@ HS = (function () {
       this._textContainer.insert(this._textElement);
       this._topElement.insert(this._textContainer);
       this._textArea = new Element("textarea", { rows: 2, cols: 40, style: "display:none" });
-      this._textArea.textContent = this._text.replace("\\n", "\n");
+      this._textArea.textContent = this._getEditText();
       this._topElement.insert(this._textArea);
 
       this._topElement.on("click", function () { this._editor.selectEditorLine(this); }.bind(this));
+      this._textElement.on("click", function (e) {
+        e.stopPropagation();
+        this._editor.editLine(this);
+      }.bind(this));
 
       return this._topElement;
     },
@@ -596,9 +640,31 @@ HS = (function () {
     },
     deselect: function () {
       this._topElement.removeClassName("HS_selected");
+      this.leaveEditMode();
     },
     isEmpty: function () {
       return this._text === "";
+    },
+    enterEditMode: function () {
+      if (!this._editMode) {
+        this._editMode = true;
+        this._textElement.hide();
+        this._textArea.show();
+        this._textArea.focus();
+      }
+    },
+    leaveEditMode: function () {
+      if (this._editMode) {
+        this._editMode = false;
+        this._textArea.hide();
+        var newText = this._editTextToInternalText(this._textArea.value);
+        if (newText !== this._text) {
+          this._text = newText;
+          this._textElement.textContent = this._getDisplayText();
+          this._editor.textChangedOnLine(this);
+        }
+        this._textElement.show();
+      }
     },
     _getDisplayText: function () {
       if (this.isEmpty()) {
@@ -606,6 +672,12 @@ HS = (function () {
       } else {
         return this._text.replace("\\n", "<br>");
       }
+    },
+    _getEditText: function () {
+      return this._text.replace("\\n", "\n");
+    },
+    _editTextToInternalText: function (text) {
+      return text.replace("\n", "\\n");
     },
     _createPlayButton: function () {
       var element = new Element("button", { type: "button", title: "Spela härifrån" }).update("&#x25b6;");
