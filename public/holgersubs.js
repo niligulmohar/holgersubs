@@ -9,6 +9,9 @@ HS = (function () {
       return [framesToSMPTE(this.start),
               framesToSMPTE(this.end),
               this.text].join(" , ");
+    },
+    toString: function () {
+      return "[Subtitle " + this.start + "-" + this.end + " " + this.text + "]";
     }
   });
   var SubtitleSequence = Class.create({
@@ -60,13 +63,13 @@ HS = (function () {
       };
       this._applyCommand(command);
     },
-    removeStartOfSubtitleAt: function (time) {
+    removeStartOfSubtitleAt: function (time, options) {
       var oldSubtitle = this.subtitleAt(time);
       var that = this;
       var removedSubtitle;
       var command = {
         apply: function () {
-          return that._removeSubtitleAt(time);
+          return that._removeSubtitleAt(time, options);
         },
         undo: function () {
           return that._insertSubtitle(oldSubtitle);
@@ -94,19 +97,39 @@ HS = (function () {
       this._applyCommand(command);
     },
     changeSubtitleTextAtTimeTo: function (time, text) {
-      var index = this._subtitleIndexFromTime(time);
-      var oldSubtitle = this._subtitles[index];
-      var newSubtitle = new Subtitle(oldSubtitle.start, oldSubtitle.end, text);
-      var that = this;
-      var command = {
-        apply: function () {
-          return that._replaceSubtitleAtIndex(index, newSubtitle);
-        },
-        undo: function () {
-          return that._replaceSubtitleAtIndex(index, oldSubtitle);
+      if (text === "") {
+        this.removeStartOfSubtitleAt(time, { preservePrecedingSubtitleEnd: true });
+      } else {
+        var index = this._subtitleIndexFromTime(time);
+        var oldSubtitle = this._subtitles[index];
+        var newSubtitle;
+        var that = this;
+        var command;
+        if (oldSubtitle && oldSubtitle.start <= time) {
+          newSubtitle = new Subtitle(oldSubtitle.start, oldSubtitle.end, text);
+          command = {
+            apply: function () {
+              return that._replaceSubtitleAtIndex(index, newSubtitle);
+            },
+            undo: function () {
+              return that._replaceSubtitleAtIndex(index, oldSubtitle);
+            }
+          };
+        } else {
+          var nextSubtitle = oldSubtitle;
+          var endTime = (nextSubtitle ? nextSubtitle.start : Infinity);
+          newSubtitle = new Subtitle(time, endTime, text);
+          command = {
+            apply: function () {
+              return that._insertSubtitle(newSubtitle);
+            },
+            undo: function () {
+              return that._removeSubtitleAt(time, { preservePrecedingSubtitleEnd: true });
+            }
+          };
         }
-      };
-      this._applyCommand(command);
+        this._applyCommand(command);
+      }
     },
     undoAvailable: function () {
       return this._undoStack.length > 0;
@@ -177,15 +200,18 @@ HS = (function () {
       return { start: newSub.start,
                end: newSub.end };
     },
-    _removeSubtitleAt: function (time) {
+    _removeSubtitleAt: function (time, options) {
       var index = this._subtitleIndexFromTime(time);
       var oldSub = this._subtitles[index];
       var prevSub = this._subtitles[index - 1];
+      options = options || {};
       this._subtitles.splice(index, 1);
       if (prevSub && prevSub.end === oldSub.start) {
-        prevSub.end = oldSub.end;
+        if (! options.preservePrecedingSubtitleEnd) {
+          prevSub.end = oldSub.end;
+        }
         return { start: prevSub.start,
-                 end: prevSub.end };
+                 end: oldSub.end };
       } else {
         return { start: oldSub.start,
                  end: oldSub.end };
@@ -208,6 +234,10 @@ HS = (function () {
         observer.notify(arg);
       });
     },
+    toString: function () {
+      var subtitles = this._subtitles.join("\n                  ");
+      return "[SubtitleSequence " + subtitles + "]";
+    }
   });
 
   SubtitleSequence.fromStl = function (text) {
@@ -276,6 +306,7 @@ HS = (function () {
       this._updateInterval = null;
       this._editorLines = [];
       this._selectedEditorLine = null;
+      window.$E = this;
     },
     setup: function () {
       this._videoElement = this._getElement("video");
@@ -304,36 +335,37 @@ HS = (function () {
         if (Event.findElement(event, "textarea")) {
           return;
         }
-        if (event.keyCode == 32) {
+        var code = event.keyCode;
+        if (code === 32) {
           /* Space */
           that.togglePlayOrPause();
           Event.stop(event);
-        } else if (event.keyCode == 13) {
-          /* Return */
+        } else if (code === 13 || code === 27) {
+          /* Return or Escape */
           if (that._selectedEditorLine) {
             that.editLine(that._selectedEditorLine);
           }
           Event.stop(event);
-        } else if (event.keyCode === 74) {
-          /* "J" */
+        } else if (code === 74 || (code === 78 && event.ctrlKey) || code === 40) {
+          /* "J", Ctrl-N or */
           that._selectNextLine();
-        } else if (event.keyCode === 75) {
-          /* "K" */
+        } else if (code === 75 || (code === 80 && event.ctrlKey) || code === 38) {
+          /* "K", Ctrl-P or */
           that._selectPreviousLine();
-        } else if (event.keyCode === 90 && event.ctrlKey) {
-          /* Ctrl-Z */
+        } else if (code === 90 && (event.ctrlKey || event.metaKey)) {
+          /* Ctrl-Z or Command-Z */
           that._undo();
           Event.stop(event);
-        } else if (event.keyCode === 89 && event.ctrlKey) {
-          /* Ctrl-Y */
+        } else if (code === 89 && (event.ctrlKey || event.metaKey)) {
+          /* Ctrl-Y or Command-Y */
           that._redo();
           Event.stop(event);
-        } else if (event.keyCode === 73) {
-          /* "I" */
+        } else if (code === 73 || code === 187 || (code === 78 && event.metaKey)) {
+          /* "I", "+" or Command-N */
           that._addSubtitle();
           Event.stop(event);
-        } else if (event.keyCode === 68 || event.keyCode === 46) {
-          /* "D" or Delete */
+        } else if (code === 68 || code === 46, code === 8) {
+          /* "D", Delete or Backspace */
           that._removeSubtitle();
           Event.stop(event);
         } else {
@@ -425,7 +457,6 @@ HS = (function () {
     },
 
     textChangedOnLine: function (line) {
-      // TODO: Fler fall
       this._subs.changeSubtitleTextAtTimeTo(line.getFrame(), line.getText());
       this._updateEditorState();
     },

@@ -240,6 +240,65 @@ describe("SubtitleSequence", function () {
       var sub = seq.subtitleAt(5);
       expect(sub.text).toEqual("Original text");
     });
+    describe("adding text to a subtitle end", function () {
+      it("should create a new subtitle", function () {
+        seq.changeSubtitleTextAtTimeTo(15, "Additional text");
+        var sub = seq.subtitleAt(15);
+        expect(sub.text).toEqual("Additional text");
+      });
+      it("should be undoable", function () {
+        seq.changeSubtitleTextAtTimeTo(15, "Additional text");
+        seq.undo();
+        var sub = seq.subtitleAt(15);
+        expect(sub).not.toBeDefined();
+      });
+      describe("with a following subtitle", function () {
+        beforeEach(function () {
+          seq.addSubtitle(25, 30, "Following text");
+        });
+        it("should create a new subtitle", function () {
+          seq.changeSubtitleTextAtTimeTo(15, "Additional text");
+          var sub = seq.subtitleAt(15);
+          expect(sub.text).toEqual("Additional text");
+        });
+        it("should be undoable", function () {
+          seq.changeSubtitleTextAtTimeTo(15, "Additional text");
+          seq.undo();
+          var sub = seq.subtitleAt(15);
+          expect(sub).not.toBeDefined();
+          var followingSub = seq.subtitleAt(25);
+          expect(followingSub.text).toEqual("Following text");
+        });
+      });
+    });
+    describe("clearing a subtitle text", function () {
+      it("should remove the subtitle", function () {
+        seq.changeSubtitleTextAtTimeTo(5, "");
+        var sub = seq.subtitleAt(5);
+        expect(sub).not.toBeDefined();
+      });
+      describe("right after another subtitle", function () {
+        beforeEach(function () {
+          seq.addSubtitle(0, 5, "Preceding text");
+        });
+        it("should not set the endpoint of the preceding one", function () {
+          seq.changeSubtitleTextAtTimeTo(5, "");
+          var sub = seq.subtitleAt(14);
+          expect(sub).not.toBeDefined();
+        });
+      });
+      describe("before another subtitle", function () {
+        beforeEach(function () {
+          seq.addSubtitle(25, 30, "Following text");
+        });
+        it("should not change the start of the following one", function () {
+          seq.changeSubtitleTextAtTimeTo(5, "");
+          var sub = seq.subtitleAt(25);
+          expect(sub.text).toEqual("Following text");
+          expect(sub.start).toEqual(25);
+        });
+      });
+    });
   });
   describe("the observer interface", function () {
     var observer;
@@ -321,7 +380,6 @@ describe("parsing example STL data", function () {
       "00:05:34:09 , 00:05:39:12 , Och det är jag!\n";
     seq = HS.SubtitleSequence.fromStl(stlData);
 
-    console.dir(seq);
     seq.eachSubtitle(0, Infinity, function (start, end, text, nextStart) {
       spy(nextStart);
     });
