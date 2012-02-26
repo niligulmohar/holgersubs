@@ -9,17 +9,22 @@
     <style>
     </style>
   </head>
-  <body onload="HS.makeEditorWithIdPrefix('HS_').withVideos('media/akt 1-2.mp4', 'media/akt 1-2.ogg').withSubs('media/akt 1-2.stl');">
-    <div id="container">
-      <div><button type="button">
-          Spara
+  <!--body onload="HS.makeEditorWithIdPrefix('HS_').withStorageId('1-2').withVideos('media/akt 1-2.mp4', 'media/akt 1-2.ogg').withSubs('media/akt 1-2.stl');"-->
+  <!--body onload="HS.makeEditorWithIdPrefix('HS_').withStorageId('akt1').withVideos('media/akt1.ogg');"-->
+  <body onload="HS.makeEditorWithIdPrefix('HS_').withStorageId('akt2').withVideos('media/akt2.ogg').withSubs('media/akt2.stl');">
+    <div id="HS_gui-container">
+      <div>
+        <button id="HS_show-stl" type="button">
+          Visa texter i STL-format
         </button>
         <button id="HS_undo" type="button" disabled="disabled">
           <b>&#x21b6;</b> Ångra
         </button>
         <button id="HS_redo" type="button" disabled="disabled">
           <b>&#x21b7;</b> Gör om
-        </button></div>
+        </button>
+        <span id="HS_status-text"></span>
+      </div>
       <div id="stack">
         <video id="HS_video" controls="">
           <p>Din webbläsare kan inte spela film på nåt bra sätt! &#x0304;\(°_o)/&#x0304;</p>
@@ -43,6 +48,15 @@
           <b>-</b> Radera
         </button>
       </div>
+    </div>
+    <div id="HS_stl-container" style="display:none">
+      <div>
+        <button id="HS_show-gui" type="button">
+          Ändra texter grafiskt
+        </button>
+      </div>
+      <textarea readonly id="HS_stl" rows="35">
+      </textarea>
     </div>
   </body>
 </html>

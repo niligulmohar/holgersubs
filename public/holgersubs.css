@@ -1,22 +1,26 @@
 body {
   background-color: #ffebb0;
-  font-size: 0.8em;
 }
 body, textarea {
   font-family: "Lucida Sans", Verdana, Arial, sans-serif;
+  font-size: 10pt;
 }
 h1 {
   font-family: "Trebuchet MS", "Lucida Sans", Verdana, Arial, sans-serif;
 }
-#container {
+#HS_gui-container, #HS_stl-container {
   width: 48em;
+}
+#HS_stl-container textarea {
+  width: 100%;
 }
 #stack {
   position: relative;
   margin: 0 auto;
 }
 #stack, #HS_video, #HS_subdisplay {
-  width: 320px;
+  //width: 320px;
+  width: 48em;
 }
 #HS_subdisplay {
   position: absolute;
@@ -26,6 +30,7 @@ h1 {
   vertical-align: bottom;
   font-family: sans-serif;
   font-weight: bold;
+  font-size: 12px;
 
   line-height: 1.3em;
 
@@ -48,23 +53,24 @@ h1 {
   position: absolute;
 }
 .HS_buttonholder {
-  width: 1.3em;
+  width: 2.5em;
   display: inline-block;
 }
 .HS_listitem button {
   padding: 0;
   line-height: 0.6em;
-  width: 1.3em;
+  width: 2.5em;
   height: 1.3em;
 }
 .HS_selected {
   background-color: #dc8;
 }
 .HS_listtext, .HS_listtext_empty {
-  margin-left: 12.5em;
+  margin-left: 16.5em;
 }
 .HS_listitem textarea {
-  margin-left: 12em;
+  margin-left: 16.5em;
+  width: 30em;
 }
 .HS_listtext_empty {
   color: #ccc;

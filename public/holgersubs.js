@@ -302,10 +302,12 @@ HS = (function () {
   var Editor = Class.create({
     initialize: function (idPrefix) {
       this._idPrefix = idPrefix;
-      this._subs = null;
+      this._subs = new SubtitleSequence();
+      this._extendDirtySpanCompletely();
       this._updateInterval = null;
       this._editorLines = [];
       this._selectedEditorLine = null;
+      this._storageId = null;
       window.$E = this;
     },
     setup: function () {
@@ -325,10 +327,19 @@ HS = (function () {
       });
       this._removeButton = this._getElement("remove");
       this._removeButton.on("click", this._removeSubtitle.bind(this));
+      this._showStlButton = this._getElement("show-stl");
+      this._showStlButton.on("click", this._showStl.bind(this));
       this._undoButton = this._getElement("undo");
       this._undoButton.on("click", this._undo.bind(this));
       this._redoButton = this._getElement("redo");
       this._redoButton.on("click", this._redo.bind(this));
+      this._showGuiButton = this._getElement("show-gui");
+      this._showGuiButton.on("click", this._showGui.bind(this));
+
+      this._guiContainer = this._getElement("gui-container");
+      this._statusTextSpan = this._getElement("status-text");
+      this._stlContainer = this._getElement("stl-container");
+      this._stlTextArea = this._getElement("stl");
 
       var that = this;
       $(document).on("keydown", function (event) {
@@ -360,14 +371,25 @@ HS = (function () {
           /* Ctrl-Y or Command-Y */
           that._redo();
           Event.stop(event);
-        } else if (code === 73 || code === 187 || (code === 78 && event.metaKey)) {
+        } else if (code === 73 || code === 107 || (code === 78 && event.metaKey && event.altKey)) {
           /* "I", "+" or Command-N */
           that._addSubtitle();
           Event.stop(event);
-        } else if (code === 68 || code === 46, code === 8) {
-          /* "D", Delete or Backspace */
+        } else if (code === 68 || code === 109 || code === 46 || code === 8) {
+          /* "D", "-", Delete or Backspace */
           that._removeSubtitle();
           Event.stop(event);
+        } else if (code === 37) {
+          /* Left */
+          that._seekSeconds(-5);
+        } else if (code === 39) {
+          /* Right */
+          that._seekSeconds(5);
+        } else if (code === 80) {
+          /* P */
+          if (that._selectedEditorLine) {
+            that.startPlayingFromTime(that._selectedEditorLine.getFrame());
+          }
         } else {
           console.dir(event);
         }
@@ -379,6 +401,9 @@ HS = (function () {
           }
         }
       });
+    },
+    setStorageId: function (id) {
+      this._storageId = id;
     },
     setupVideoSources: function () {
       var that = this;
@@ -408,12 +433,47 @@ HS = (function () {
       this._setupSubtitleSequenceObserver();
       this._updateEditorState();
     },
+    _showStl: function () {
+      this._guiContainer.hide();
+      this._stlContainer.show();
+      this._stlTextArea.textContent = this._subs.toStl();
+      this._stlTextArea.activate();
+    },
+    _showGui: function () {
+      this._stlContainer.hide();
+      this._guiContainer.show();
+    },
+    save: function () {
+      this._saveSubsToLocalStorage();
+      console.log("sparade");
+    },
+    _saveSubsToLocalStorage: function () {
+      localStorage.setItem(this._getStorageKey(), this._subs.toStl());
+    },
+    _getSubsInLocalStorage: function () {
+      return localStorage.getItem(this._getStorageKey());
+    },
+    _getStorageKey: function () {
+      return "stlForId" + this._storageId;
+    },
+    hasSubsInLocalStorage: function () {
+      return !!this._getSubsInLocalStorage();
+    },
+    loadSubsFromLocalStorage: function () {
+      this.loadStlData(this._getSubsInLocalStorage());
+    },
+    message: function (text) {
+      this._statusTextSpan.textContent = text;
+    },
     togglePlayOrPause: function () {
       if (this._videoElement.paused) {
         this._videoElement.play();
       } else {
         this._pauseVideo();
       }
+    },
+    _seekSeconds: function (seconds) {
+      this._videoElement.currentTime += seconds;
     },
     _selectNextLine: function () {
       var index = this._editorLines.indexOf(this._selectedEditorLine);
@@ -450,6 +510,7 @@ HS = (function () {
     },
 
     leaveEditMode: function (line) {
+      this.save();
       var oldLine = this._selectedEditorLine;
       if (oldLine) {
         oldLine.leaveEditMode();
@@ -465,6 +526,10 @@ HS = (function () {
       var that = this;
       this._videoElement.currentTime = framesToSeconds(time);
       this._playVideo();
+    },
+
+    moveSubtitleAtTimeToCurrentFrame: function (time) {
+      console.log(this._getEditorLineAt(time));
     },
 
     _getElement: function (idWithoutPrefix) {
@@ -516,13 +581,14 @@ HS = (function () {
       return this._subs.subtitleAt(this._getCurrentFrame());
     },
     _setSubtitleDisplayText: function (text) {
-      var html = text.replace("\\n", "<br>");
+      var html = text.replace("\\n", "<br>").replace("|", "<br>");
       this._subDisplayElement.innerHTML = html;
     },
     _getCurrentFrame: function () {
       return secondsToFrames(this._videoElement.currentTime);
     },
     _getLastFrame: function () {
+      console.log("last frame", secondsToFrames(this._videoElement.duration));
       return secondsToFrames(this._videoElement.duration);
     },
     _undo: function () {
@@ -532,10 +598,16 @@ HS = (function () {
       }
     },
     _selectEditorLineAtTime: function (time) {
-      this.selectEditorLine(this._getEditorLineAt(time));
+      var editorLine = this._getEditorLineAt(time);
+      if (editorLine) {
+        this.selectEditorLine(editorLine);
+      }
     },
     _editLineAt: function (time) {
-      this.editLine(this._getEditorLineAt(time));
+      var editorLine = this._getEditorLineAt(time);
+      if (editorLine) {
+        this.editLine(editorLine);
+      }
     },
     _getEditorLineAt: function (time) {
       var lineIndex = this._getEditorLineIndexBeforeFrame(time);
@@ -553,6 +625,7 @@ HS = (function () {
     _addSubtitle: function () {
       var text = "";
       var now = this._getCurrentFrame();
+      console.log("inserting subtitle at frame", now);
       var referenceSubtitle = this._subs.subtitleAtOrAfter(now);
       var start = now;
       if (referenceSubtitle === undefined) {
@@ -595,6 +668,8 @@ HS = (function () {
       this._dirtySpanEnd = Math.max(this._dirtySpanEnd, end);
     },
     _updateEditorState: function () {
+      this.save();
+      console.log("dirty span", this._dirtySpanStart, this._dirtySpanEnd);
       var firstFrameOfChanges = this._dirtySpanStart;
       var now = this._getCurrentFrame();
       if (now >= this._dirtySpanStart && now <= this._dirtySpanEnd) {
@@ -702,7 +777,18 @@ HS = (function () {
   var makeEditorWithIdPrefix = function (idPrefix) {
     var editor = new Editor(idPrefix);
     editor.setup();
+    var loadedSubsFromLocalStorage = false;
     var editorBuilder = {
+      withStorageId: function (id) {
+        editor.setStorageId(id);
+        console.log("have in localstorage?");
+        if (editor.hasSubsInLocalStorage()) {
+          console.log("loading from localstorage");
+          editor.loadSubsFromLocalStorage();
+          loadedSubsFromLocalStorage = true;
+        }
+        return this;
+      },
       withVideo: function (url) {
         editor.setupVideoSources(url);
         return this;
@@ -712,7 +798,10 @@ HS = (function () {
         return this;
       },
       withSubs: function (url) {
-        editor.requestAndLoadSubs(url);
+        if (!loadedSubsFromLocalStorage) {
+          console.log("loading from url");
+          editor.requestAndLoadSubs(url);
+        }
         return this;
       }
     }
@@ -789,13 +878,21 @@ HS = (function () {
       if (topElement.offsetTop + topElement.offsetHeight > offsetParent.scrollTop + offsetParent.offsetHeight - 4) {
         offsetParent.scrollTop = topElement.offsetTop - offsetParent.offsetHeight + topElement.offsetHeight + 4;
       }
+      this._showButtons();
     },
     deselect: function () {
       this._topElement.removeClassName("HS_selected");
       this.leaveEditMode();
+      this._hideButtons();
+    },
+    _showButtons: function () {
+      this._moveButton.firstChild.show();
+    },
+    _hideButtons: function () {
+      this._moveButton.firstChild.hide();
     },
     isEmpty: function () {
-      return this._text === "";
+      return (/^\s*$/).test(this._text);
     },
     enterEditMode: function () {
       if (!this._editMode) {
@@ -833,7 +930,7 @@ HS = (function () {
       return text.replace("\n", "\\n");
     },
     _createPlayButton: function () {
-      var element = new Element("button", { type: "button", title: "Spela härifrån" }).update("&#x25b6;");
+      var element = new Element("button", { type: "button", title: "Spela härifrån (P)" }).update("&#x25b6;");
       var that = this;
       element.on("click", function (event) {
         Event.stop(event);
@@ -842,19 +939,27 @@ HS = (function () {
       return element;
     },
     _createBackButton: function () {
-      return this._createButton("-", "Flytta en bildruta bakåt");
+      var button = this._createButton("-", "Flytta en bildruta bakåt");
+      return button.holder;
     },
     _createForwardButton: function () {
-      return this._createButton("+", "Flytta en bildruta framåt");
+      var button = this._createButton("+", "Flytta en bildruta framåt");
+      return button.holder;
     },
-    _createMoveToPlayCursorButton: function (parentNode) {
-      return this._createButton("&#x2195;", "Flytta en bildruta framåt");
+    _createMoveToPlayCursorButton: function () {
+      var button = this._createButton("&#x2195;", "Flytta till aktuell position");
+      var that = this;
+      button.element.on("click", function (event) {
+        Event.stop(event);
+        that._editor.moveSubtitleAtTimeToCurrentFrame(that._frame);
+      });
+      return button.holder;
     },
     _createButton: function (contents, title) {
       var holder = new Element("div", { "class": "HS_buttonholder" });
       var element = new Element("button", { type: "button", style: "display:none", title: title }).update(contents);
       holder.insert(element);
-      return holder;
+      return { holder: holder, element: element };
     }
   });
 
