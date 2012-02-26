@@ -303,6 +303,10 @@ HS = (function () {
     return frames / FPS;
   };
 
+  var isEmpty = function (text) {
+    return (/^\s*$/).test(text);
+  };
+
   var Editor = Class.create({
     initialize: function (idPrefix) {
       this._idPrefix = idPrefix;
@@ -310,6 +314,7 @@ HS = (function () {
       this._editorLines = [];
       this._selectedEditorLine = null;
       this._storageId = null;
+      this._temporaryPause = false;
       window.$E = this;
     },
     setup: function () {
@@ -470,9 +475,21 @@ HS = (function () {
     },
     togglePlayOrPause: function () {
       if (this._videoElement.paused) {
-        this._videoElement.play();
+        this._playVideo();
       } else {
         this._pauseVideo();
+      }
+    },
+    enterTemporaryPause: function () {
+      if (!this._videoElement.paused) {
+        this._temporaryPause = true;
+        this._pauseVideo();
+      }
+    },
+    leaveTemporaryPause: function () {
+      if (this._temporaryPause) {
+        this._temporaryPause = false;
+        this._playVideo();
       }
     },
     _seekSeconds: function (seconds) {
@@ -626,9 +643,9 @@ HS = (function () {
       }
     },
     _addSubtitle: function () {
+      this.enterTemporaryPause();
       var text = "";
       var now = this._getCurrentFrame();
-      console.log("inserting subtitle at frame", now);
       var referenceSubtitle = this._subs.subtitleAtOrAfter(now);
       var start = now;
       if (referenceSubtitle === undefined) {
@@ -896,7 +913,7 @@ HS = (function () {
       //this._moveButton.firstChild.hide();
     },
     isEmpty: function () {
-      return (/^\s*$/).test(this._text);
+      return isEmpty(this._text);
     },
     enterEditMode: function () {
       if (!this._editMode) {
@@ -918,6 +935,7 @@ HS = (function () {
           this._editor.textChangedOnLine(this);
         }
         this._textElement.show();
+        this._editor.leaveTemporaryPause();
       }
     },
     _getDisplayText: function () {
@@ -928,10 +946,18 @@ HS = (function () {
       }
     },
     _getEditText: function () {
-      return this._text.replace("\\n", "\n");
+      if (this.isEmpty()) {
+        return "";
+      } else {
+        return this._text.replace("\\n", "\n");
+      }
     },
     _editTextToInternalText: function (text) {
-      return text.replace("\n", "\\n");
+      if (isEmpty(text)) {
+        return "";
+      } else {
+        return text.replace("\n", "\\n");
+      }
     },
     _createPlayButton: function () {
       var element = new Element("button", { type: "button", title: "Spela härifrån (P)" }).update("&#x25b6;");
