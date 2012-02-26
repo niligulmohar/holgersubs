@@ -52,6 +52,7 @@ HS = (function () {
     },
     addSubtitle: function (start, end, text) {
       var sub = new Subtitle(start, end, text);
+      console.log("new subtitle is", sub);
       var that = this;
       var command = {
         apply: function () {
@@ -197,6 +198,8 @@ HS = (function () {
       }
 
       this._subtitles.splice(index, 0, newSub);
+      console.log("insert subtitle returned an update", { start: newSub.start,
+                                                          end: newSub.end });
       return { start: newSub.start,
                end: newSub.end };
     },
@@ -230,6 +233,7 @@ HS = (function () {
       this._redoStack = [];
     },
     _notifyObservers: function (arg) {
+      console.log("notifying", this._observers);
       this._observers.forEach(function (observer) {
         observer.notify(arg);
       });
@@ -302,8 +306,6 @@ HS = (function () {
   var Editor = Class.create({
     initialize: function (idPrefix) {
       this._idPrefix = idPrefix;
-      this._subs = new SubtitleSequence();
-      this._extendDirtySpanCompletely();
       this._updateInterval = null;
       this._editorLines = [];
       this._selectedEditorLine = null;
@@ -401,6 +403,7 @@ HS = (function () {
           }
         }
       });
+      this.loadStlData("");
     },
     setStorageId: function (id) {
       this._storageId = id;
@@ -664,8 +667,11 @@ HS = (function () {
       });
     },
     _extendDirtySpan: function (start, end) {
+      console.log("_extendDirtySpan", start, end);
+      console.log("before", this._dirtySpanStart, this._dirtySpanEnd);
       this._dirtySpanStart = Math.min(this._dirtySpanStart, start);
       this._dirtySpanEnd = Math.max(this._dirtySpanEnd, end);
+      console.log("after", this._dirtySpanStart, this._dirtySpanEnd);
     },
     _updateEditorState: function () {
       this.save();
@@ -781,9 +787,7 @@ HS = (function () {
     var editorBuilder = {
       withStorageId: function (id) {
         editor.setStorageId(id);
-        console.log("have in localstorage?");
         if (editor.hasSubsInLocalStorage()) {
-          console.log("loading from localstorage");
           editor.loadSubsFromLocalStorage();
           loadedSubsFromLocalStorage = true;
         }
@@ -799,7 +803,6 @@ HS = (function () {
       },
       withSubs: function (url) {
         if (!loadedSubsFromLocalStorage) {
-          console.log("loading from url");
           editor.requestAndLoadSubs(url);
         }
         return this;
@@ -884,12 +887,13 @@ HS = (function () {
       this._topElement.removeClassName("HS_selected");
       this.leaveEditMode();
       this._hideButtons();
+          console.log("loading from url");
     },
     _showButtons: function () {
-      this._moveButton.firstChild.show();
+      //this._moveButton.firstChild.show();
     },
     _hideButtons: function () {
-      this._moveButton.firstChild.hide();
+      //this._moveButton.firstChild.hide();
     },
     isEmpty: function () {
       return (/^\s*$/).test(this._text);
