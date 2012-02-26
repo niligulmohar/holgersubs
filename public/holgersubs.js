@@ -52,7 +52,6 @@ HS = (function () {
     },
     addSubtitle: function (start, end, text) {
       var sub = new Subtitle(start, end, text);
-      console.log("new subtitle is", sub);
       var that = this;
       var command = {
         apply: function () {
@@ -132,6 +131,36 @@ HS = (function () {
         this._applyCommand(command);
       }
     },
+    loadFromStl: function (text) {
+      var seq = new SubtitleSequence();
+      var lines = text.split("\n");
+      lines.forEach(function (line) {
+        if (line !== "") {
+          var parts = line.split(" , ");
+          if (parts.length >= 3) {
+            var start = smpteToFrames(parts[0]);
+            var end = smpteToFrames(parts[1]);
+            var text = parts.slice(2).join(" , ");
+          }
+          seq.addSubtitle(start, end, text);
+        }
+      });
+
+      var oldSubtitles = this._subtitles;
+      var newSubtitles = seq._subtitles;
+      var that = this;
+      var command = {
+        apply: function () {
+          that._subtitles = newSubtitles;
+          return { start: 0, end: Infinity };
+        },
+        undo: function () {
+          that._subtitles = oldSubtitles;
+          return { start: 0, end: Infinity };
+        }
+      }
+      this._applyCommand(command);
+    },
     undoAvailable: function () {
       return this._undoStack.length > 0;
     },
@@ -198,8 +227,6 @@ HS = (function () {
       }
 
       this._subtitles.splice(index, 0, newSub);
-      console.log("insert subtitle returned an update", { start: newSub.start,
-                                                          end: newSub.end });
       return { start: newSub.start,
                end: newSub.end };
     },
@@ -233,7 +260,6 @@ HS = (function () {
       this._redoStack = [];
     },
     _notifyObservers: function (arg) {
-      console.log("notifying", this._observers);
       this._observers.forEach(function (observer) {
         observer.notify(arg);
       });
@@ -246,21 +272,7 @@ HS = (function () {
 
   SubtitleSequence.fromStl = function (text) {
     var seq = new SubtitleSequence();
-
-    var lines = text.split("\n");
-
-    lines.forEach(function (line) {
-      if (line !== "") {
-        var parts = line.split(" , ");
-        if (parts.length >= 3) {
-          var start = smpteToFrames(parts[0]);
-          var end = smpteToFrames(parts[1]);
-          var text = parts.slice(2).join(" , ");
-        }
-        seq.addSubtitle(start, end, text);
-      }
-    });
-
+    seq.loadFromStl(text);
     seq.clearUndoStack();
     return seq;
   };
@@ -444,16 +456,22 @@ HS = (function () {
     _showStl: function () {
       this._guiContainer.hide();
       this._stlContainer.show();
-      this._stlTextArea.textContent = this._subs.toStl();
+      var stl = this._subs.toStl();
+      this._oldStlCode = stl;
+      this._stlTextArea.value = stl;
       this._stlTextArea.activate();
     },
     _showGui: function () {
       this._stlContainer.hide();
       this._guiContainer.show();
+      var stl = this._stlTextArea.value;
+      if (stl !== this._oldStlCode) {
+        this._subs.loadFromStl(stl);
+        this._updateEditorState();
+      }
     },
     save: function () {
       this._saveSubsToLocalStorage();
-      console.log("sparade");
     },
     _saveSubsToLocalStorage: function () {
       localStorage.setItem(this._getStorageKey(), this._subs.toStl());
@@ -608,7 +626,6 @@ HS = (function () {
       return secondsToFrames(this._videoElement.currentTime);
     },
     _getLastFrame: function () {
-      console.log("last frame", secondsToFrames(this._videoElement.duration));
       return secondsToFrames(this._videoElement.duration);
     },
     _undo: function () {
@@ -684,15 +701,11 @@ HS = (function () {
       });
     },
     _extendDirtySpan: function (start, end) {
-      console.log("_extendDirtySpan", start, end);
-      console.log("before", this._dirtySpanStart, this._dirtySpanEnd);
       this._dirtySpanStart = Math.min(this._dirtySpanStart, start);
       this._dirtySpanEnd = Math.max(this._dirtySpanEnd, end);
-      console.log("after", this._dirtySpanStart, this._dirtySpanEnd);
     },
     _updateEditorState: function () {
       this.save();
-      console.log("dirty span", this._dirtySpanStart, this._dirtySpanEnd);
       var firstFrameOfChanges = this._dirtySpanStart;
       var now = this._getCurrentFrame();
       if (now >= this._dirtySpanStart && now <= this._dirtySpanEnd) {
@@ -904,7 +917,6 @@ HS = (function () {
       this._topElement.removeClassName("HS_selected");
       this.leaveEditMode();
       this._hideButtons();
-          console.log("loading from url");
     },
     _showButtons: function () {
       //this._moveButton.firstChild.show();
