@@ -137,6 +137,56 @@ describe("SubtitleSequence", function () {
       });
     });
   });
+  describe("temporary empty subtitles", function () {
+    var START = 5;
+    var END = 15;
+    it("should be possible to create", function () {
+      seq.addSubtitle(START, END, "");
+      var temporarySub = seq.subtitleAt(START);
+      expect(temporarySub).toBeDefined();
+    });
+    it("should disappear if explicitly set to be empty", function () {
+      seq.addSubtitle(START, END, "");
+      seq.changeSubtitleTextAtTimeTo(START, "");
+      var temporarySub = seq.subtitleAt(START);
+      expect(temporarySub).not.toBeDefined();
+    });
+    it("should not make preceding subtitles longer when disappearing", function () {
+      seq.addSubtitle(START - 5, END - 5, "preceding subtitle");
+      seq.addSubtitle(START, END, "");
+      seq.changeSubtitleTextAtTimeTo(START, "");
+      var sub = seq.subtitleAt(START);
+      expect(sub).not.toBeDefined();
+    });
+  });
+  describe("adding a temporary subtitle and changing it", function () {
+    var START = 5;
+    beforeEach(function () {
+      seq.addSubtitle(START, START + 5, "");
+      seq.changeSubtitleTextAtTimeTo(START, "permanent subtitle");
+    });
+    it("can be individually undone", function () {
+      var permanentSub = seq.subtitleAt(START);
+      expect(permanentSub.text).toEqual("permanent subtitle");
+      seq.undo();
+      var temporarySub = seq.subtitleAt(START);
+      expect(temporarySub.text).toEqual("");
+      seq.undo();
+      var sub = seq.subtitleAt(START);
+      expect(sub).not.toBeDefined();
+    });
+    it("can be compounded into a single undo command", function () {
+      seq.compoundLastTwoCommands();
+      var permanentSub = seq.subtitleAt(START);
+      expect(permanentSub.text).toEqual("permanent subtitle");
+      seq.undo();
+      var sub = seq.subtitleAt(START);
+      expect(sub).not.toBeDefined();
+      seq.redo();
+      var newPermanentSub = seq.subtitleAt(START);
+      expect(newPermanentSub.text).toEqual("permanent subtitle");
+    });
+  });
   describe("adding subtitles starting simultaneously", function () {
     it("should throw an exception", function () {
       seq.addSubtitle(1, 2, "Hej");
@@ -176,10 +226,10 @@ describe("SubtitleSequence", function () {
       expect(earlierSub.end).toEqual(15);
     });
     describe("removing the end of the last subtitle", function () {
-      it("should throw an exception", function () {
-        expect(function () {
-          seq.removeEndOfSubtitleAt(15);
-        }).toThrow("Cannot remove the end of the last subtitle");
+      it("should set the end to the far future", function () {
+        seq.removeEndOfSubtitleAt(15);
+        var laterSub = seq.subtitleAt(15);
+        expect(laterSub.end > 100000).toBeTruthy();
       });
     });
   });

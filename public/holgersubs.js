@@ -11,7 +11,7 @@ HS = (function () {
               this.text].join(" , ");
     },
     toString: function () {
-      return "[Subtitle " + this.start + "-" + this.end + " " + this.text + "]";
+      return "[Subtitle " + framesToSMPTE(this.start) + "-" + framesToSMPTE(this.end) + " " + this.text + "]";
     }
   });
   var SubtitleSequence = Class.create({
@@ -81,10 +81,13 @@ HS = (function () {
       var index = this._subtitleIndexFromTime(time);
       var oldSubtitle = this._subtitles[index];
       var nextSubtitle = this._subtitles[index + 1];
+      var end;
       if (nextSubtitle === undefined) {
-        throw new Error("Cannot remove the end of the last subtitle");
+        end = LAST_FRAME;
+      } else {
+        end = nextSubtitle.start;
       }
-      var newSubtitle = new Subtitle(oldSubtitle.start, nextSubtitle.start, oldSubtitle.text);
+      var newSubtitle = new Subtitle(oldSubtitle.start, end, oldSubtitle.text);
       var that = this;
       var command = {
         apply: function () {
@@ -98,7 +101,9 @@ HS = (function () {
     },
     changeSubtitleTextAtTimeTo: function (time, text) {
       if (text === "") {
-        this.removeStartOfSubtitleAt(time, { preservePrecedingSubtitleEnd: true });
+        if (this.subtitleAt(time) !== undefined) {
+          this.removeStartOfSubtitleAt(time, { preservePrecedingSubtitleEnd: true });
+        }
       } else {
         var index = this._subtitleIndexFromTime(time);
         var oldSubtitle = this._subtitles[index];
@@ -142,7 +147,9 @@ HS = (function () {
             var end = smpteToFrames(parts[1]);
             var text = parts.slice(2).join(" , ");
           }
-          seq.addSubtitle(start, end, text);
+          if (!isEmpty(text)) {
+            seq.addSubtitle(start, end, text);
+          }
         }
       });
 
@@ -164,13 +171,36 @@ HS = (function () {
     undoAvailable: function () {
       return this._undoStack.length > 0;
     },
-    undo: function () {
+    undo: function (args) {
       var command = this._undoStack.pop();
-      this._redoStack.push(command);
+      if (!(args && args.withoutRedo)) {
+        this._redoStack.push(command);
+      }
       this._notifyObservers(command.undo());
     },
     clearUndoStack: function () {
       this._undoStack = [];
+    },
+    compoundLastTwoCommands: function () {
+      if (this._undoStack.length >= 2) {
+        var newerCommand = this._undoStack.pop();
+        var olderCommand = this._undoStack.pop();
+        var compoundCommand = {
+          apply: function () {
+            var interval0 = olderCommand.apply();
+            var interval1 = newerCommand.apply();
+            return intervalUnion(interval0, interval1);
+          },
+          undo: function () {
+            var interval0 = newerCommand.undo();
+            var interval1 = olderCommand.undo();
+            return intervalUnion(interval0, interval1);
+          }
+        }
+        this._undoStack.push(compoundCommand);
+      } else {
+        throw new Error("There are less than two commands on the undo stack");
+      }
     },
     redoAvailable: function () {
       return this._redoStack.length > 0;
@@ -181,8 +211,11 @@ HS = (function () {
       this._notifyObservers(command.apply());
     },
     toStl: function () {
-      var lines = this._subtitles.map(function (sub) {
-        return sub.toStl();
+      var lines = [];
+      this._subtitles.forEach(function (sub) {
+        if (!isEmpty(sub.text)) {
+          lines.push(sub.toStl());
+        }
       });
       return lines.join("\n") + "\n";
     },
@@ -231,20 +264,26 @@ HS = (function () {
                end: newSub.end };
     },
     _removeSubtitleAt: function (time, options) {
-      var index = this._subtitleIndexFromTime(time);
-      var oldSub = this._subtitles[index];
-      var prevSub = this._subtitles[index - 1];
-      options = options || {};
-      this._subtitles.splice(index, 1);
-      if (prevSub && prevSub.end === oldSub.start) {
-        if (! options.preservePrecedingSubtitleEnd) {
-          prevSub.end = oldSub.end;
+      try {
+        var index = this._subtitleIndexFromTime(time);
+        var oldSub = this._subtitles[index];
+        var prevSub = this._subtitles[index - 1];
+        options = options || {};
+        this._subtitles.splice(index, 1);
+        if (prevSub && prevSub.end === oldSub.start) {
+          if (! options.preservePrecedingSubtitleEnd) {
+            prevSub.end = oldSub.end;
+          }
+          return { start: prevSub.start,
+                   end: oldSub.end };
+        } else {
+          return { start: oldSub.start,
+                   end: oldSub.end };
         }
-        return { start: prevSub.start,
-                 end: oldSub.end };
-      } else {
-        return { start: oldSub.start,
-                 end: oldSub.end };
+      } catch (error) {
+        console.log(error);
+        console.log(error.stack);
+        throw error;
       }
     },
     _replaceSubtitleAtIndex: function (index, newSub) {
@@ -277,7 +316,15 @@ HS = (function () {
     return seq;
   };
 
+  var intervalUnion = function (interval0, interval1) {
+    var start = Math.min(interval0.start, interval1.start);
+    var end = Math.max(interval0.end, interval1.end);
+    return { start: start, end: end };
+  }
+
   var FPS = 50;
+
+  var LAST_FRAME = FPS * (99 * 3600 + 59 * 60 + 59 + 1) - 1;
 
   var smpteToFrames = function (smpte) {
     var seconds = 0;
@@ -323,10 +370,12 @@ HS = (function () {
     initialize: function (idPrefix) {
       this._idPrefix = idPrefix;
       this._updateInterval = null;
+      this._subs = null;
       this._editorLines = [];
       this._selectedEditorLine = null;
       this._storageId = null;
       this._temporaryPause = false;
+      this._addedTemporarySubtitle = false;
       window.$E = this;
     },
     setup: function () {
@@ -349,7 +398,7 @@ HS = (function () {
       this._showStlButton = this._getElement("show-stl");
       this._showStlButton.on("click", this._showStl.bind(this));
       this._undoButton = this._getElement("undo");
-      this._undoButton.on("click", this._undo.bind(this));
+      this._undoButton.on("click", this.undo.bind(this));
       this._redoButton = this._getElement("redo");
       this._redoButton.on("click", this._redo.bind(this));
       this._showGuiButton = this._getElement("show-gui");
@@ -384,7 +433,7 @@ HS = (function () {
           that._selectPreviousLine();
         } else if (code === 90 && (event.ctrlKey || event.metaKey)) {
           /* Ctrl-Z or Command-Z */
-          that._undo();
+          that.undo();
           Event.stop(event);
         } else if (code === 89 && (event.ctrlKey || event.metaKey)) {
           /* Ctrl-Y or Command-Y */
@@ -410,7 +459,7 @@ HS = (function () {
             that.startPlayingFromTime(that._selectedEditorLine.getFrame());
           }
         } else {
-          console.dir(event);
+          console.log("keyCode", code);
         }
       });
       $(document).on("click", function (event) {
@@ -556,7 +605,18 @@ HS = (function () {
     },
 
     textChangedOnLine: function (line) {
+      console.log("textChangedOnLine");
       this._subs.changeSubtitleTextAtTimeTo(line.getFrame(), line.getText());
+      if (this._addedTemporarySubtitle) {
+        this._subs.compoundLastTwoCommands();
+        console.log("compounding commands");
+        if (isEmpty(line.getText) &&
+            this._addedTemporarySubtitle !== "movedPreviousSubtitleEnd") {
+          this._subs.undo({ withoutRedo: true });
+          console.log("undoing temporary line addition");
+        }
+        this._addedTemporarySubtitle = false;
+      }
       this._updateEditorState();
     },
 
@@ -628,7 +688,8 @@ HS = (function () {
     _getLastFrame: function () {
       return secondsToFrames(this._videoElement.duration);
     },
-    _undo: function () {
+    undo: function () {
+      this.leaveEditMode();
       if (this._subs.undoAvailable()) {
         this._subs.undo();
         this._updateEditorState();
@@ -661,19 +722,25 @@ HS = (function () {
     },
     _addSubtitle: function () {
       this.enterTemporaryPause();
-      var text = "";
       var now = this._getCurrentFrame();
+      console.log("now", now);
       var referenceSubtitle = this._subs.subtitleAtOrAfter(now);
+      console.log("referenceSubtitle", referenceSubtitle);
+      var withinSubtitle = referenceSubtitle && (referenceSubtitle.start <= now);
+      console.log("withinSubtitle", withinSubtitle);
       var start = now;
       if (referenceSubtitle === undefined) {
-        this._subs.addSubtitle(now, this._getLastFrame(), text);
+        this._subs.addSubtitle(now, LAST_FRAME, "");
+        this._addedTemporarySubtitle = true;
       } else if (referenceSubtitle.start < now) {
-        this._subs.addSubtitle(now, referenceSubtitle.end, text);
+        this._subs.addSubtitle(now, referenceSubtitle.end, "");
+        this._addedTemporarySubtitle = "movedPreviousSubtitleEnd";
       } else if (referenceSubtitle.start === now) {
         this._editLineAt(now);
         return;
       } else {
-        this._subs.addSubtitle(now, referenceSubtitle.start, text);
+        this._subs.addSubtitle(now, referenceSubtitle.start, "");
+        this._addedTemporarySubtitle = true;
       }
       this._updateEditorState();
       this._editLineAt(now);
@@ -737,16 +804,25 @@ HS = (function () {
       }
     },
     _updateDirtySpan: function () {
+      console.log("updating dirty span", this._dirtySpanStart, this._dirtySpanEnd);
       var lineRemovalStartIndex = this._getEditorLineIndexAfterFrame(this._dirtySpanStart);
-      var lineRemovalEndIndex = this._getEditorLineIndexBeforeFrame(this._dirtySpanEnd);
+      console.log("line removal start index", lineRemovalStartIndex);
+      console.log("which is", ""+this._editorLines[lineRemovalStartIndex]);
+      var lineRemovalEndIndex = this._getEditorLineIndexAfterFrame(this._dirtySpanEnd);
+      console.log("line removal end index pre", lineRemovalEndIndex);
       lineRemovalEndIndex = Math.max(lineRemovalStartIndex, lineRemovalEndIndex);
+      console.log("line removal end index", lineRemovalEndIndex);
+      console.log("which is", ""+this._editorLines[lineRemovalEndIndex]);
       var lineBeforeRemovalSpan = this._editorLines[lineRemovalStartIndex - 1];
       var lineAfterRemovalSpan = this._editorLines[lineRemovalEndIndex];
-      if (lineAfterRemovalSpan && lineAfterRemovalSpan.getText() === "") {
+      console.log("line after removal span", ""+lineAfterRemovalSpan);
+      if (lineAfterRemovalSpan && lineAfterRemovalSpan.isEmpty()) {
         lineRemovalEndIndex ++;
         lineAfterRemovalSpan = this._editorLines[lineRemovalEndIndex];
+        console.log("line removal end index modified", lineRemovalEndIndex);
       }
       var linesToRemove = lineRemovalEndIndex - lineRemovalStartIndex;
+      console.log("lines to remove", linesToRemove);
       var removedLines = this._editorLines.splice(lineRemovalStartIndex, linesToRemove);
       var that = this;
       removedLines.forEach(function (editorLine) {
@@ -788,12 +864,15 @@ HS = (function () {
         this._dirtySpanStart,
         this._dirtySpanEnd,
         function (start, end, text, nextStart) {
+          console.log("Adding subtitle", text);
           var textLine = that._newEditorLine(start, text, atIndex++);
           addFunction(textLine.createDomElement());
           if (end > start &&
               (nextStart === null || end < nextStart) &&
+              end < LAST_FRAME &&
               (beforeEditorLine === undefined || end < beforeEditorLine.getFrame())) {
             var noTextLine = that._newEditorLine(end, "", atIndex++);
+            console.log("Adding empty subtitle");
             addFunction(noTextLine.createDomElement());
           }
         }
@@ -941,9 +1020,10 @@ HS = (function () {
         this._textArea.hide();
         this._textArea.blur();
         var newText = this._editTextToInternalText(this._textArea.value);
-        if (newText !== this._text) {
+        if (newText === "" || newText !== this._text) {
           this._text = newText;
-          this._textElement.textContent = this._getDisplayText();
+          console.log("updating text");
+          this._textElement.innerHTML = this._getDisplayText();
           this._editor.textChangedOnLine(this);
         }
         this._textElement.show();
@@ -1002,6 +1082,9 @@ HS = (function () {
       var element = new Element("button", { type: "button", style: "display:none", title: title }).update(contents);
       holder.insert(element);
       return { holder: holder, element: element };
+    },
+    toString: function () {
+      return "[EditorLine " + framesToSMPTE(this._frame) + " " + this._text + "]";
     }
   });
 
