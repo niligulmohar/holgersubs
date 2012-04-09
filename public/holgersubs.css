@@ -8,8 +8,41 @@ body, textarea {
 h1 {
   font-family: "Trebuchet MS", "Lucida Sans", Verdana, Arial, sans-serif;
 }
-#HS_gui-container, #HS_stl-container {
+#HS_gui-container, #HS_stl-container, #HS_help {
   width: 48em;
+  position: absolute;
+}
+#HS_help {
+    background-color: #222;
+    opacity: .85;
+    border-radius: 10px;
+    color: #fff;
+}
+#HS_help div {
+    margin: 1em;
+}
+#HS_help table {
+    width: 100%;
+}
+.top {
+    border-top: 1px solid #999;
+}
+td.HS_key, td.HS_help-links {
+    text-align: right;
+}
+#HS_help-close {
+    color: #dd0;
+    text-decoration: underline;
+    font-weight: bold;
+    cursor: pointer;
+}
+.HS_help-title {
+    font-weight: bold;
+}
+span.HS_key {
+    font-family: "Courier New", monospace;
+    font-weight: bold;
+    color: #dd0;
 }
 #HS_stl-container textarea {
   width: 100%;

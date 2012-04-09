@@ -394,21 +394,22 @@ HS = (function () {
         that._addSubtitle();
       });
       this._removeButton = this._getElement("remove");
-      this._removeButton.on("click", this._removeSubtitle.bind(this));
       this._showStlButton = this._getElement("show-stl");
-      this._showStlButton.on("click", this._showStl.bind(this));
       this._undoButton = this._getElement("undo");
-      this._undoButton.on("click", this.undo.bind(this));
       this._redoButton = this._getElement("redo");
-      this._redoButton.on("click", this._redo.bind(this));
       this._showGuiButton = this._getElement("show-gui");
-      this._showGuiButton.on("click", this._showGui.bind(this));
 
       this._guiContainer = this._getElement("gui-container");
       this._statusTextSpan = this._getElement("status-text");
       this._stlContainer = this._getElement("stl-container");
       this._stlTextArea = this._getElement("stl");
 
+      this._addKeyHandlers();
+      this._addClickHandlers();
+      this._setupHelp();
+      this.loadStlData("");
+    },
+    _addKeyHandlers: function () {
       var that = this;
       $(document).on("keydown", function (event) {
         if (Event.findElement(event, "textarea")) {
@@ -419,9 +420,17 @@ HS = (function () {
           /* Space */
           that.togglePlayOrPause();
           Event.stop(event);
-        } else if (code === 13 || code === 27) {
-          /* Return or Escape */
+        } else if (code === 13) {
+          /* Return */
           if (that._selectedEditorLine) {
+            that.editLine(that._selectedEditorLine);
+          }
+          Event.stop(event);
+        } else if (code === 27) {
+          /* Escape */
+          if (that._isHelpVisible()) {
+            that._hideHelp();
+          } else if (that._selectedEditorLine) {
             that.editLine(that._selectedEditorLine);
           }
           Event.stop(event);
@@ -458,10 +467,21 @@ HS = (function () {
           if (that._selectedEditorLine) {
             that.startPlayingFromTime(that._selectedEditorLine.getFrame());
           }
+        } else if (code === 191) {
+          /* ? */
+          that._toggleHelp();
         } else {
           console.log("keyCode", code);
         }
       });
+    },
+    _addClickHandlers: function () {
+      this._showGuiButton.on("click", this._showGui.bind(this));
+      this._redoButton.on("click", this._redo.bind(this));
+      this._undoButton.on("click", this.undo.bind(this));
+      this._showStlButton.on("click", this._showStl.bind(this));
+      this._removeButton.on("click", this._removeSubtitle.bind(this));
+      var that = this;
       $(document).on("click", function (event) {
         if (Event.isLeftClick(event)) {
           if (!Event.findElement(event, "textarea")) {
@@ -469,7 +489,64 @@ HS = (function () {
           }
         }
       });
-      this.loadStlData("");
+    },
+    _setupHelp: function () {
+      this._helpContainer = this._getElement("help");
+      this._helpButton = this._getElement("show-help");
+      this._helpButton.on("click", this._toggleHelp.bind(this));
+      this._helpKeyTable = this._getElement("help-keys");
+      this._helpCloseLink = this._getElement("help-close");
+      var that = this;
+      this._helpCloseLink.on("click", function (event) {
+        that._hideHelp();
+      });
+      this._addKeyHelp("<Mellanslag>", "Spela/pausa film")
+      this._addKeyHelp(["<Vänsterpil>", "/", "<Högerpil>"], "Hoppa 5 sekunder framåt/bakåt");
+      this._addKeyHelp(["<Uppil>", "eller", "k"], "Välj föregående text");
+      this._addKeyHelp(["<Nedpil>", "eller", "j"], "Välj nästa text");
+      this._addKeyHelp("<Enter>", "Ändra text");
+      this._addKeyHelp(this._ctrlOrCmdKeyName("z"), "Ångra");
+      this._addKeyHelp(this._ctrlOrCmdKeyName("y"), "Upprepa");
+      this._addKeyHelp("i", "Lägg till text vid aktuell position i filmen");
+      this._addKeyHelp("d", "Radera vald text");
+      this._addKeyHelp("p", "Spela filmen från vald text");
+      this._addKeyHelp("?", "Öppna hjälpen för kortkommandon");
+    },
+    _toggleHelp: function () {
+      this._helpContainer.toggle();
+    },
+    _isHelpVisible: function () {
+      return this._helpContainer.visible();
+    },
+    _hideHelp: function () {
+      this._helpContainer.hide();
+    },
+    _addKeyHelp: function (key, description) {
+      var tr = createElement("tr");
+      var keyTd = createElement("td", { "class": this._idPrefix + "key",
+                                        parent: tr });
+
+      if (typeof key === "string") {
+        key = [key];
+      }
+      for (var i = 0, l = key.length; i < l; i++) {
+        var keyText = key[i];
+        if (i % 2 === 0) {
+          createElement("span", { "class": this._idPrefix + "key",
+                                  parent: keyTd,
+                                  text: keyText });
+        } else {
+          keyTd.appendChild(document.createTextNode(" " + keyText + " "));
+        }
+      }
+      keyTd.appendChild(document.createTextNode(" :"));
+      var descriptionTd = createElement("td", { parent: tr,
+                                                text: description });
+      this._helpKeyTable.appendChild(tr);
+    },
+    _ctrlOrCmdKeyName: function (key) {
+      var ctrlOrCmd = (navigator.platform === "MacIntel" ? "<Cmd>" : "<Ctrl>");
+      return [ctrlOrCmd, "+", key];
     },
     setStorageId: function (id) {
       this._storageId = id;
@@ -484,9 +561,8 @@ HS = (function () {
       }
 
       videoUrls.forEach(function (url) {
-        var sourceElement = document.createElement("source");
-        sourceElement.setAttribute("src", url);
-        that._videoElement.appendChild(sourceElement);
+        createElement("source", { src: url,
+                                  parent: that._videoElement });
       });
     },
     requestAndLoadSubs: function (url) {
@@ -864,7 +940,7 @@ HS = (function () {
         this._dirtySpanStart,
         this._dirtySpanEnd,
         function (start, end, text, nextStart) {
-          console.log("Adding subtitle", text);
+          //console.log("Adding subtitle", text);
           var textLine = that._newEditorLine(start, text, atIndex++);
           addFunction(textLine.createDomElement());
           if (end > start &&
@@ -872,7 +948,7 @@ HS = (function () {
               end < LAST_FRAME &&
               (beforeEditorLine === undefined || end < beforeEditorLine.getFrame())) {
             var noTextLine = that._newEditorLine(end, "", atIndex++);
-            console.log("Adding empty subtitle");
+            //console.log("Adding empty subtitle");
             addFunction(noTextLine.createDomElement());
           }
         }
@@ -1118,6 +1194,23 @@ HS = (function () {
     if (typeof console !== "undefined" && console.debug) {
       console.debug(text);
     }
+  };
+
+  var createElement = function (tagName, attributes) {
+    var result = document.createElement(tagName);
+    if (attributes) {
+      for (var name in attributes) {
+        var value = attributes[name];
+        if (name === "parent") {
+          value.appendChild(result);
+        } else if (name === "text") {
+          result.textContent = value;
+        } else {
+          result.setAttribute(name, value);
+        }
+      }
+    }
+    return result;
   };
 
   return { SubtitleSequence: SubtitleSequence,

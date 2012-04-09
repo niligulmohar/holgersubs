@@ -14,6 +14,9 @@
   <body onload="HS.makeEditorWithIdPrefix('HS_').withStorageId('akt2').withVideos('media/akt2.ogg').withSubs('media/akt2.stl');">
     <div id="HS_gui-container">
       <div>
+        <button id="HS_show-help" type="button">
+          Hjälp
+        </button>
         <button id="HS_show-stl" type="button">
           Visa texter i STL-format
         </button>
@@ -21,7 +24,7 @@
           <b>&#x21b6;</b> Ångra
         </button>
         <button id="HS_redo" type="button" disabled="disabled">
-          <b>&#x21b7;</b> Gör om
+          <b>&#x21b7;</b> Upprepa
         </button>
         <span id="HS_status-text"></span>
       </div>
@@ -57,6 +60,24 @@
       </div>
       <textarea id="HS_stl" rows="35">
       </textarea>
+    </div>
+    <div id="HS_help" style="display:none">
+      <div>
+        <table>
+          <tr>
+            <td class="HS_help-title">
+              Kortkommandon
+            </td>
+            <td class="HS_help-links">
+              <span id="HS_help-close">
+                Stäng
+              </span>
+            </td>
+          </tr>
+        </table>
+        <table id="HS_help-keys" class="top">
+        </table>
+      </div>
     </div>
   </body>
 </html>
